@@ -133,9 +133,49 @@ Input payload: JSON string of a CDP Input event (`{ type, ...fields }`).
 
 The Electron host captures audio via Web Audio API tap in the preload. The extension uses `chrome.tabCapture` + `getUserMedia` in an offscreen document. CDP in Electron is the built-in `--remote-debugging-port` server. CDP in the extension is `chrome.debugger` attached to the active tab and bridged over WebSocket.
 
+## Hyperswarm Multi-Client Architecture
+
+### Headless CDP client (`src/p2p/client.js`)
+
+A standalone Node.js script (no Electron) that joins the swarm as a peer and exposes a local CDP WebSocket proxy.
+
+```
+SWARM_TOPIC=myapp CDP_PROXY_PORT=9230 node src/p2p/client.js
+# or:
+SWARM_TOPIC=myapp npm run headless
+```
+
+Multiple instances can run simultaneously with different `CDP_PROXY_PORT` values. Each connects independently to the host Electron window over hyperswarm.
+
+Connect agent-browser to the proxy port instead of directly to the Electron CDP port:
+```
+agent-browser connect 9230
+```
+
+### Multi-peer swarm (swarm.js)
+
+`swarm.js` uses a `Map<id, {conn, recvBuf}>` to track all connected peers simultaneously. Previously, new connections were rejected when one peer existed. Now all peers are accepted. The `onCdpUp(payload, conn)` callback includes the source connection so the host can route responses back to the correct peer.
+
+### Per-peer CDP server connections (cdp-proxy.js)
+
+On the host side, each swarm peer gets its own WebSocket connection to the Electron CDP server (`peerHostSockets Map<conn, WebSocket>`). CDP responses from the CDP server are routed back to the originating peer via `sendCdpDown(buf, conn)`. This means multiple headless clients can run independent CDP sessions simultaneously.
+
+`onPeerConnect(conn)` and `onPeerDisconnect(conn)` are exported and called from `main.js` to manage the per-peer CDP server connections.
+
+### Gotchas
+
+- Each headless client needs a unique `CDP_PROXY_PORT` if running on the same machine.
+- The Electron CDP server supports one session per WebSocket — each peer gets its own upstream connection.
+- The swarm host must be running before headless clients join; clients wait for the host via DHT.
+- Audio and frame broadcasts go to all connected peers; CDP messages are routed per-peer.
+
 ## File Map
 
 - `src/main.js` — Electron main entry, wires all modules
+- `src/p2p/swarm.js` — Hyperswarm multi-peer management, framed binary protocol
+- `src/p2p/cdp-proxy.js` — CDP proxy: per-peer host connections, multi-client WS server
+- `src/p2p/client.js` — Headless CDP client (no Electron), run with `npm run headless`
+- `src/p2p/host.js` — Screen capture for P2P relay
 - `src/bot/client.js` — discord.js v14 login, @discordjs/voice join, Opus decode, audio IPC send
 - `src/bot/voice.js` — PCM PassThrough → Opus encoder → AudioResource → AudioPlayer
 - `src/electron/preload.cjs` — Audio playback (Web Audio) + loopback capture (desktopCapturer)

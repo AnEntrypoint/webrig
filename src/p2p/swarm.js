@@ -4,8 +4,8 @@ import { createHash } from 'node:crypto'
 const MSG = { AUDIO: 1, FRAME: 2, CDP_UP: 3, CDP_DOWN: 4, INPUT: 5 }
 
 let swarm = null
-let peer = null
-let recvBuf = Buffer.alloc(0)
+let peers = new Map()
+let peerSeq = 0
 let callbacks = {}
 
 function _hashTopic(str) {
@@ -21,69 +21,59 @@ function _encode(type, payload) {
   return out
 }
 
-function _send(type, payload) {
-  if (!peer || peer.destroyed) return
-  try {
-    peer.write(_encode(type, payload))
-  } catch {}
+function _sendTo(conn, type, payload) {
+  if (!conn || conn.destroyed) return
+  try { conn.write(_encode(type, payload)) } catch {}
 }
 
-function _processRecvBuf() {
-  while (recvBuf.length >= 8) {
-    const type = recvBuf.readUInt32LE(0)
-    const len = recvBuf.readUInt32LE(4)
-    if (recvBuf.length < 8 + len) break
-    const payload = recvBuf.slice(8, 8 + len)
-    recvBuf = recvBuf.slice(8 + len)
-    _dispatch(type, payload)
+function _processRecvBuf(state) {
+  while (state.recvBuf.length >= 8) {
+    const type = state.recvBuf.readUInt32LE(0)
+    const len = state.recvBuf.readUInt32LE(4)
+    if (state.recvBuf.length < 8 + len) break
+    const payload = state.recvBuf.slice(8, 8 + len)
+    state.recvBuf = state.recvBuf.slice(8 + len)
+    _dispatch(type, payload, state.conn)
   }
 }
 
-function _dispatch(type, payload) {
+function _dispatch(type, payload, conn) {
   if (type === MSG.AUDIO && callbacks.onAudio) {
     const f32 = new Float32Array(payload.buffer, payload.byteOffset, payload.byteLength / 4)
     callbacks.onAudio(f32)
   } else if (type === MSG.FRAME && callbacks.onFrame) {
     callbacks.onFrame(payload)
   } else if (type === MSG.CDP_UP && callbacks.onCdpUp) {
-    callbacks.onCdpUp(payload)
+    callbacks.onCdpUp(payload, conn)
   } else if (type === MSG.CDP_DOWN && callbacks.onCdpDown) {
-    callbacks.onCdpDown(payload)
+    callbacks.onCdpDown(payload, conn)
   } else if (type === MSG.INPUT && callbacks.onInput) {
     try { callbacks.onInput(JSON.parse(payload.toString())) } catch {}
   }
 }
 
 function _attachPeer(conn) {
-  peer = conn
-  recvBuf = Buffer.alloc(0)
+  const id = ++peerSeq
+  const state = { conn, recvBuf: Buffer.alloc(0), id }
+  peers.set(id, state)
   conn.on('data', (chunk) => {
-    recvBuf = Buffer.concat([recvBuf, chunk])
-    _processRecvBuf()
+    state.recvBuf = Buffer.concat([state.recvBuf, chunk])
+    _processRecvBuf(state)
   })
   conn.on('error', () => {})
   conn.on('close', () => {
-    peer = null
-    if (callbacks.onDisconnect) callbacks.onDisconnect()
+    peers.delete(id)
+    if (callbacks.onDisconnect) callbacks.onDisconnect(conn)
   })
-  if (callbacks.onConnect) callbacks.onConnect()
+  if (callbacks.onConnect) callbacks.onConnect(conn)
 }
 
 async function startSwarm(topicStr, role, cbs) {
   callbacks = cbs || {}
   swarm = new Hyperswarm()
   const topic = _hashTopic(topicStr)
-
-  swarm.on('connection', (conn) => {
-    if (peer && !peer.destroyed) {
-      conn.destroy()
-      return
-    }
-    _attachPeer(conn)
-  })
-
+  swarm.on('connection', (conn) => _attachPeer(conn))
   swarm.on('error', (err) => console.error('[swarm] error:', err.message))
-
   await swarm.join(topic, { client: true, server: true }).flushed()
   console.log(`[swarm] joined topic as ${role}`)
 }
@@ -92,28 +82,32 @@ function destroySwarm() {
   if (swarm) {
     swarm.destroy().catch(() => {})
     swarm = null
-    peer = null
+    peers.clear()
   }
 }
 
 function sendAudio(f32) {
-  _send(MSG.AUDIO, Buffer.from(f32.buffer, f32.byteOffset, f32.byteLength))
+  const buf = Buffer.from(f32.buffer, f32.byteOffset, f32.byteLength)
+  for (const { conn } of peers.values()) _sendTo(conn, MSG.AUDIO, buf)
 }
 
 function sendFrame(jpegBuf) {
-  _send(MSG.FRAME, jpegBuf)
+  for (const { conn } of peers.values()) _sendTo(conn, MSG.FRAME, jpegBuf)
 }
 
 function sendInput(eventObj) {
-  _send(MSG.INPUT, Buffer.from(JSON.stringify(eventObj)))
+  const buf = Buffer.from(JSON.stringify(eventObj))
+  for (const { conn } of peers.values()) _sendTo(conn, MSG.INPUT, buf)
 }
 
-function sendCdpUp(buf) {
-  _send(MSG.CDP_UP, buf)
+function sendCdpUp(buf, conn) {
+  if (conn) { _sendTo(conn, MSG.CDP_UP, buf); return }
+  for (const p of peers.values()) _sendTo(p.conn, MSG.CDP_UP, buf)
 }
 
-function sendCdpDown(buf) {
-  _send(MSG.CDP_DOWN, buf)
+function sendCdpDown(buf, conn) {
+  if (conn) { _sendTo(conn, MSG.CDP_DOWN, buf); return }
+  for (const p of peers.values()) _sendTo(p.conn, MSG.CDP_DOWN, buf)
 }
 
 export { startSwarm, destroySwarm, sendAudio, sendFrame, sendInput, sendCdpUp, sendCdpDown }

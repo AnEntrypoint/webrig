@@ -117,21 +117,21 @@ async function startP2P() {
   if (!SWARM_TOPIC) return
   swarmMod = await import('./p2p/swarm.js')
   hostMod = await import('./p2p/host.js')
-  const { startCdpProxy, onSwarmCdpUp, onSwarmCdpDown } = await import('./p2p/cdp-proxy.js')
+  const { startCdpProxy, onSwarmCdpUp, onSwarmCdpDown, onPeerConnect, onPeerDisconnect } = await import('./p2p/cdp-proxy.js')
   await swarmMod.startSwarm(SWARM_TOPIC, SWARM_ROLE, {
     onAudio: (f32) => { if (SWARM_ROLE === 'client') pushAudioFrame(f32) },
     onFrame: (jpegBuf) => {
       if (SWARM_ROLE === 'client' && mainWindow && !mainWindow.isDestroyed())
         mainWindow.webContents.send('screen-frame', jpegBuf.toString('base64'))
     },
-    onCdpUp: onSwarmCdpUp,
-    onCdpDown: onSwarmCdpDown,
+    onCdpUp: (buf, conn) => onSwarmCdpUp(buf, conn),
+    onCdpDown: (buf) => onSwarmCdpDown(buf),
     onInput: (evt) => {
       if (SWARM_ROLE === 'host' && mainWindow && !mainWindow.isDestroyed())
         try { mainWindow.webContents.sendInputEvent(evt) } catch {}
     },
-    onConnect: () => console.log('[p2p] peer connected'),
-    onDisconnect: () => console.log('[p2p] peer disconnected'),
+    onConnect: (conn) => { console.log('[p2p] peer connected'); if (SWARM_ROLE === 'host') onPeerConnect(conn) },
+    onDisconnect: (conn) => { console.log('[p2p] peer disconnected'); if (SWARM_ROLE === 'host') onPeerDisconnect(conn) },
   })
   startCdpProxy(SWARM_ROLE, parseInt(CDP_PORT, 10), CDP_PROXY_PORT)
   console.log(`[p2p] started as ${SWARM_ROLE}`)
