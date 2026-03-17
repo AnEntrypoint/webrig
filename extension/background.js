@@ -8,15 +8,6 @@ let cdpActive = false
 
 const TYPE_INPUT = 5
 
-function parseFraned(buf) {
-  if (buf.byteLength < 8) return null
-  const view = new DataView(buf)
-  const type = view.getUint32(0, true)
-  const len = view.getUint32(4, true)
-  if (buf.byteLength < 8 + len) return null
-  return { type, payload: buf.slice(8, 8 + len) }
-}
-
 function connectCdpWs() {
   if (cdpReconnectTimer) { clearTimeout(cdpReconnectTimer); cdpReconnectTimer = null }
   cdpWs = new WebSocket(cdpWsUrl)
