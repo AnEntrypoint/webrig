@@ -1,0 +1,17 @@
+{
+  "name": "jerryrig-companion",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@discordjs/voice": "^0.19",
+    "b4a": "^1",
+    "discord.js": "^14",
+    "dotenv": "^16",
+    "hyperswarm": "^4",
+    "libsodium-wrappers": "^0.7",
+    "opusscript": "^0.0.8",
+    "prism-media": "^1",
+    "tweetnacl": "^1",
+    "ws": "^8"
+  }
+}

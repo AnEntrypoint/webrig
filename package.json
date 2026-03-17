@@ -8,7 +8,8 @@
     "start": "electron .",
     "start:debug": "electron . --enable-logging",
     "build": "electron-builder --win",
-    "headless": "node src/p2p/client.js"
+    "headless": "node src/p2p/client.js",
+    "companion": "node companion/index.js"
   },
   "dependencies": {
     "@discordjs/voice": "^0.19.1",

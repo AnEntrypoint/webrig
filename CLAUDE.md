@@ -169,6 +169,31 @@ On the host side, each swarm peer gets its own WebSocket connection to the Elect
 - The swarm host must be running before headless clients join; clients wait for the host via DHT.
 - Audio and frame broadcasts go to all connected peers; CDP messages are routed per-peer.
 
+## Companion App
+
+`companion/index.js` is a standalone Node.js script (no Electron) that bridges all browser extension limitations. Run with `node companion/index.js` or `npm run companion`.
+
+### What it bridges
+
+- **Audio**: WS server on `WS_AUDIO_PORT` (default 9888) receives framed binary messages from the extension (4+4+N framing: type LE uint32, length LE uint32, payload). AUDIO frames (type=1) are pushed to the Discord voice pipeline. FRAME (type=2) and INPUT (type=5) frames are forwarded to Hyperswarm peers. Inbound Discord audio is sent back to the extension as AUDIO frames.
+- **CDP**: HTTP server on `CDP_BRIDGE_HTTP_PORT` (default 9232) responds to `/json/version` and `/json/list` so agent-browser can connect as if it were a real Chrome CDP server. WS upgrade on `/devtools/browser/companion` bridges agent-browser ↔ extension chrome.debugger (type=3 CDP_UP / type=4 CDP_DOWN). A second WS server on `CDP_PROXY_PORT` (default 9231) accepts direct CDP WS connections from the extension.
+- **Hyperswarm**: If `SWARM_TOPIC` is set, joins the swarm as a peer and relays audio/frames/input to all connected swarm peers.
+- **Discord**: If `DISCORD_BOT_TOKEN`, `GUILD_ID`, and `CHANNEL_ID` are set, logs in, joins the voice channel, pushes extension audio to Discord, and relays inbound Discord audio back to the extension.
+
+### Env vars
+
+- `WS_AUDIO_PORT` — main data channel WS port (default 9888)
+- `CDP_PROXY_PORT` — extension CDP WS bridge port (default 9231)
+- `CDP_BRIDGE_HTTP_PORT` — agent-browser CDP HTTP+WS port (default 9232)
+- `SWARM_TOPIC` — Hyperswarm topic string (optional)
+- `DISCORD_BOT_TOKEN`, `GUILD_ID`, `CHANNEL_ID` — Discord voice bridge (optional)
+
+### Reused modules
+
+- `src/bot/voice.js` — PCM PassThrough → Opus encoder → AudioResource → AudioPlayer
+- `src/bot/client.js` — discord.js v14 login, voice join, Opus decode
+- `src/p2p/swarm.js` — Hyperswarm multi-peer management, framed binary protocol
+
 ## File Map
 
 - `src/main.js` — Electron main entry, wires all modules
