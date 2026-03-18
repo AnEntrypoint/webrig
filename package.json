@@ -1,6 +1,6 @@
 {
   "name": "webrig",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "General-purpose Electron browser with audio routing to Discord",
   "main": "src/main.js",
   "type": "module",
