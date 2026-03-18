@@ -6,3 +6,4 @@ package-lock.json
 logs.txt
 dist/
 .prd
+companion-pm2.json
