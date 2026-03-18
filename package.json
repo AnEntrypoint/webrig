@@ -1,5 +1,5 @@
 {
-  "name": "jerryrig",
+  "name": "webrig",
   "version": "1.0.1",
   "description": "General-purpose Electron browser with audio routing to Discord",
   "main": "src/main.js",
