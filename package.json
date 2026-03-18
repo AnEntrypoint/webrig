@@ -1,6 +1,6 @@
 {
   "name": "jerryrig",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "General-purpose Electron browser with audio routing to Discord",
   "main": "src/main.js",
   "type": "module",
