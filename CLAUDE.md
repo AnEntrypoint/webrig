@@ -15,22 +15,22 @@ Single Electron process that:
 ### Outbound (Electron → Discord)
 1. Electron window loads TARGET_URL
 2. On `did-finish-load`, main sends `start-capture` IPC to renderer
-3. Preload patches `window.AudioContext` to intercept all new contexts via `tapPageCtx`
-4. `tapPageCtx` creates a MediaStreamDestination tap and patches `AudioNode.prototype.connect` to mirror all connections to `pageCtx.destination` into the tap
-5. All `<audio>`/`<video>` elements are tapped via `createMediaElementSource` (with `captureStream` fallback); a MutationObserver and periodic 2s scan catch dynamically added elements
-6. ScriptProcessorNode collects all tapped audio, interleaves stereo channels to Float32
-7. Sends `audio-pcm` IPC to main with the Float32Array buffer
+3. Preload patches `window.AudioContext` to auto-resume all page contexts on creation
+4. `buildCaptureGraph()` creates a capture AudioContext + AudioWorkletNode (`capture-processor` from `capture-worklet.js`)
+5. `AudioNode.prototype.connect` is patched to mirror any connection to `AudioDestinationNode` into the worklet node
+6. All `<audio>`/`<video>` elements are tapped via `createMediaElementSource`; a MutationObserver and periodic 2s scan catch dynamically added elements
+7. AudioWorklet posts each 960-sample frame; preload sends it as `audio-pcm` IPC to main
 8. Main process `ipcMain.on('audio-pcm')` calls `pushAudioFrame(f32)`
 9. `pushAudioFrame` converts f32 to s16le, writes to PassThrough stream
 10. PassThrough → prism opus Encoder → createAudioResource(StreamType.Opus) → AudioPlayer.play()
 
 ### Inbound (Discord → Electron)
+Not implemented in the Electron host. Inbound Discord audio is only bridged in `companion/index.js` (companion mode):
 1. VoiceReceiver detects speaking via `speaking` event
 2. `subscribeToSpeaker` subscribes to user's Opus stream
 3. prism opus Decoder converts Opus → s16le PCM Buffer
 4. Decoded buffer converted to Float32Array (/ 32768)
-5. `sendAudioToRenderer` sends `audio-chunk` IPC to renderer
-6. Preload AudioContext schedules buffer playback with jitter buffer
+5. Companion sends AUDIO frame to extension over WS (port 9888)
 
 ## Key Architecture Decisions
 
@@ -40,11 +40,11 @@ No separate bot process. Eliminates socket/IPC complexity for audio. Bot and Ele
 ### Official bot token (discord.js v14)
 Uses `discord.js` v14 with `GatewayIntentBits.Guilds` and `GatewayIntentBits.GuildVoiceStates`. No selfbot. Bot must have CONNECT + SPEAK permissions in the target voice channel.
 
-### Audio capture via desktopCapturer loopback
-The preload script uses `getUserMedia` with `chromeMediaSource: 'desktop'` and the window's source ID. This captures both audio and a minimal video stream (1x1 px) to get the audio loopback. The video track is unused; only the audio track is processed.
+### Audio capture via Web Audio intercept + AudioWorklet
+The preload patches `window.AudioContext` to auto-resume all page-created contexts. A dedicated capture `AudioContext` is created with an `AudioWorkletNode` (`capture-processor` loaded from `capture-worklet.js`). `AudioNode.prototype.connect` is patched so anything connecting to `AudioDestinationNode` also feeds the worklet. `<audio>`/`<video>` elements are tapped via `createMediaElementSource`. The worklet emits 960-sample frames (one Opus frame) via `port.onmessage` → `ipcRenderer.send('audio-pcm')`.
 
-### PCM pipeline uses ScriptProcessorNode
-ScriptProcessorNode (deprecated but universally available in Electron/Chromium) is used in the preload to tap the audio at exactly 960 samples/frame (one Opus frame). This avoids AudioWorklet complexity and works reliably in the preload isolated world.
+### PCM pipeline uses AudioWorklet
+`AudioWorkletNode` with `capture-processor` (in `src/electron/capture-worklet.js`) handles PCM collection at exactly 960 samples/frame. The worklet runs in the audio rendering thread, avoiding the main-thread overhead of `ScriptProcessorNode`.
 
 ### preload.js must be .cjs
 With `"type": "module"` in package.json, Electron preload scripts must use `.cjs` extension. The main process uses ESM.
@@ -126,7 +126,7 @@ Input payload: JSON string of a CDP Input event (`{ type, ...fields }`).
 
 ### Ports
 
-- `ws://127.0.0.1:9888` — audio PCM + JPEG frames + INPUT dispatch (main data channel)
+- `ws://127.0.0.1:9888` — audio PCM + webm video frames + INPUT dispatch (main data channel)
 - `ws://127.0.0.1:9231` — CDP command/event bridge (extension tab debugger ↔ jerryrig)
 
 ### Difference from Electron host
@@ -231,7 +231,7 @@ GitHub Pages compatible. Load with `?room=ROOM&stream=STREAMID&ws=ws://...`.
 - `src/p2p/host.js` — Screen capture for P2P relay
 - `src/bot/client.js` — discord.js v14 login, @discordjs/voice join, Opus decode, audio IPC send
 - `src/bot/voice.js` — PCM PassThrough → Opus encoder → AudioResource → AudioPlayer
-- `src/electron/preload.cjs` — Audio playback (Web Audio) + loopback capture (desktopCapturer)
+- `src/electron/preload.cjs` — Chrome compat spoof, navbar, audio capture (AudioWorklet intercept) + inbound playback
 - `src/electron/vdo-bridge.cjs` — VDO.Ninja hidden window preload: MediaSource webm + AudioContext → getUserMedia override
 - `src/electron/error.html` — Fallback page if TARGET_URL fails
 - `docs/viewer.html` — KVM viewer: VDO.Ninja iframe + input overlay + WS INPUT dispatch

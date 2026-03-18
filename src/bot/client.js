@@ -128,7 +128,7 @@ async function joinDiscordVoice(client, guildId, channelId) {
     }
   }
 
-  throw new Error('Voice connection failed after 5 attempts')
+  throw new Error('Voice connection failed after 8 attempts')
 }
 
 function subscribeToSpeaker(userId, onPcmChunk) {

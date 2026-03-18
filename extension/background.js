@@ -17,7 +17,7 @@ function connectCdpWs() {
     try { msg = JSON.parse(e.data) } catch { return }
     if (!activeTabId) return
     chrome.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}, () => {
-      chrome.runtime.lastError
+      if (chrome.runtime.lastError) console.warn('[bg] CDP send error:', chrome.runtime.lastError.message)
     })
   }
   cdpWs.onclose = () => {
@@ -108,7 +108,9 @@ function dispatchInput(tabId, payload) {
     : evt.type === 'keyEvent' ? 'Input.dispatchKeyEvent'
     : null
   if (!method) return
-  chrome.debugger.sendCommand({ tabId }, method, evt, () => { chrome.runtime.lastError })
+  chrome.debugger.sendCommand({ tabId }, method, evt, () => {
+    if (chrome.runtime.lastError) console.warn('[bg] input dispatch error:', chrome.runtime.lastError.message)
+  })
 }
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
