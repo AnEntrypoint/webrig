@@ -1,12 +1,11 @@
 let audioCtx = null
 let processor = null
 let videoTrack = null
-let frameInterval = null
+let mediaRecorder = null
 let ws = null
 let wsUrl = null
 let reconnectTimer = null
 let active = false
-let framePending = false
 
 const TYPE_AUDIO = 1
 const TYPE_FRAME = 2
@@ -36,39 +35,35 @@ function connectWs() {
   ws.onerror = () => {}
 }
 
-function stopFrameLoop() {
-  if (frameInterval) { clearInterval(frameInterval); frameInterval = null }
-  framePending = false
+function stopMediaRecorder() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    try { mediaRecorder.stop() } catch {}
+  }
+  mediaRecorder = null
 }
 
-function startFrameLoop(track) {
-  const canvas = new OffscreenCanvas(1280, 720)
-  const ctx2d = canvas.getContext('2d')
-  const imgCapture = new ImageCapture(track)
-
-  track.onended = stopFrameLoop
-
-  frameInterval = setInterval(async () => {
-    if (!active || framePending) return
-    framePending = true
-    try {
-      const bitmap = await imgCapture.grabFrame()
-      canvas.width = bitmap.width
-      canvas.height = bitmap.height
-      ctx2d.drawImage(bitmap, 0, 0)
-      bitmap.close()
-      const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.7 })
-      const arrayBuf = await blob.arrayBuffer()
-      sendFramed(TYPE_FRAME, arrayBuf)
-    } catch (_) {}
-    framePending = false
-  }, 100)
+function startMediaRecorder(track) {
+  const videoStream = new MediaStream([track])
+  const codecs = [
+    'video/webm; codecs=av1',
+    'video/webm; codecs=h264',
+    'video/webm',
+  ]
+  const mimeType = codecs.find((c) => MediaRecorder.isTypeSupported(c)) || ''
+  mediaRecorder = new MediaRecorder(videoStream, { mimeType, videoBitsPerSecond: 2_000_000 })
+  mediaRecorder.ondataavailable = async (e) => {
+    if (!active || !e.data || e.data.size === 0) return
+    const arrayBuf = await e.data.arrayBuffer()
+    sendFramed(TYPE_FRAME, arrayBuf)
+  }
+  track.onended = stopMediaRecorder
+  mediaRecorder.start(100)
 }
 
 function stopAll() {
   active = false
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
-  stopFrameLoop()
+  stopMediaRecorder()
   if (videoTrack) { try { videoTrack.stop() } catch {} videoTrack = null }
   if (processor) { try { processor.disconnect() } catch {} processor = null }
   if (audioCtx) { try { audioCtx.close() } catch {} audioCtx = null }
@@ -96,7 +91,7 @@ async function startCapture(streamId, url) {
   const vTrack = stream.getVideoTracks()[0]
   if (vTrack) {
     videoTrack = vTrack
-    startFrameLoop(vTrack)
+    startMediaRecorder(vTrack)
   }
 
   audioCtx = new AudioContext({ sampleRate: 48000 })

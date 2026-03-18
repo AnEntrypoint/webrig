@@ -114,12 +114,12 @@ All binary WebSocket messages use the same 4+4+N framing as `src/p2p/swarm.js`:
 - Bytes 8+: payload
 
 Audio payload: interleaved stereo Float32Array (48 kHz, 4096-sample frames).
-Frame payload: JPEG bytes captured from the tab video track at ~10fps.
+Frame payload: fragmented webm chunks from MediaRecorder (AV1 or H264, 100ms timeslice). Was JPEG; replaced with MediaRecorder for compressed video.
 Input payload: JSON string of a CDP Input event (`{ type, ...fields }`).
 
 ### Extension Files
 
-- `extension/offscreen.js` — Runs in the offscreen document. Captures tab audio and video via `getUserMedia` with `chromeMediaSource: tab`. Sends AUDIO frames and FRAME (JPEG) messages to `ws://127.0.0.1:9888` with framing headers. Video uses `ImageCapture.grabFrame()` + `OffscreenCanvas.convertToBlob()` at 10fps.
+- `extension/offscreen.js` — Runs in the offscreen document. Captures tab audio and video via `getUserMedia` with `chromeMediaSource: tab`. Sends AUDIO (type=1) Float32 frames via ScriptProcessorNode and FRAME (type=2) webm chunks via MediaRecorder (AV1→H264→webm fallback, 100ms timeslice) to `ws://127.0.0.1:9888`.
 - `extension/background.js` — Service worker. Gets `tabCapture` stream ID, attaches `chrome.debugger` to the tab, opens a second WebSocket to `ws://127.0.0.1:9231` for CDP bidirectional bridging, and dispatches INPUT (type=5) messages from the main WS as `chrome.debugger` Input events.
 - `extension/popup.js` / `extension/popup.html` — UI with two URL inputs (audio/video WS and CDP WS) and status indicators for both connections.
 - `extension/manifest.json` — MV3, requires `tabCapture`, `offscreen`, `storage`, `activeTab`, `debugger` permissions.
@@ -194,6 +194,34 @@ On the host side, each swarm peer gets its own WebSocket connection to the Elect
 - `src/bot/client.js` — discord.js v14 login, voice join, Opus decode
 - `src/p2p/swarm.js` — Hyperswarm multi-peer management, framed binary protocol
 
+## VDO.Ninja Relay
+
+Set `VDO_NINJA_ROOM` (and optionally `VDO_NINJA_STREAM_ID`) in `.env` to enable. On app ready, a hidden BrowserWindow loads the VDO.Ninja push URL with `vdo-bridge.cjs` as its preload.
+
+### vdo-bridge.cjs
+
+Runs in the hidden VDO.Ninja BrowserWindow as a preload (`contextIsolation: false`, `webSecurity: false`). Connects to `ws://127.0.0.1:WS_AUDIO_PORT`, parses 4+4+N framed messages, and overrides `navigator.mediaDevices.getUserMedia` / `getDisplayMedia` so VDO.Ninja receives the relay stream.
+
+- FRAME (type=2): fragmented webm chunks fed into `MediaSource` + `SourceBuffer` → `<video>` element → `video.captureStream()` for video track. Codec detected from `MediaSource.isTypeSupported` (AV1 → H264 → plain webm). `sourceBuffer.mode = 'sequence'` handles fragmented webm.
+- AUDIO (type=1): Float32 stereo scheduled via `AudioContext.createBufferSource()` → `createMediaStreamDestination()` for audio track.
+- Combined stream = `new MediaStream([videoTrack, audioTrack])` built once video is playable.
+- `getUserMedia` / `getDisplayMedia` poll until `combinedStream` is ready (up to 5s), then resolve.
+
+### KVM viewer (docs/viewer.html)
+
+GitHub Pages compatible. Load with `?room=ROOM&stream=STREAMID&ws=ws://...`.
+
+- Embeds VDO.Ninja viewer iframe (`pointer-events: none`).
+- Transparent overlay `div` captures all mouse and keyboard events.
+- Mouse move/down/up/click/wheel → `Input.dispatchMouseEvent` format JSON → framed TYPE_INPUT=5 → WebSocket.
+- Key down/up → `Input.dispatchKeyEvent` format JSON → framed TYPE_INPUT=5 → WebSocket.
+- WS auto-reconnects every 2s. Status bar shows connection state and stream info.
+
+### Env vars
+
+- `VDO_NINJA_ROOM` — VDO.Ninja room name (required to enable)
+- `VDO_NINJA_STREAM_ID` — push stream ID (auto-generated random 6-char if unset)
+
 ## File Map
 
 - `src/main.js` — Electron main entry, wires all modules
@@ -204,5 +232,7 @@ On the host side, each swarm peer gets its own WebSocket connection to the Elect
 - `src/bot/client.js` — discord.js v14 login, @discordjs/voice join, Opus decode, audio IPC send
 - `src/bot/voice.js` — PCM PassThrough → Opus encoder → AudioResource → AudioPlayer
 - `src/electron/preload.cjs` — Audio playback (Web Audio) + loopback capture (desktopCapturer)
+- `src/electron/vdo-bridge.cjs` — VDO.Ninja hidden window preload: MediaSource webm + AudioContext → getUserMedia override
 - `src/electron/error.html` — Fallback page if TARGET_URL fails
+- `docs/viewer.html` — KVM viewer: VDO.Ninja iframe + input overlay + WS INPUT dispatch
 - `.env.example` — All configurable variables

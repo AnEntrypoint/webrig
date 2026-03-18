@@ -16,6 +16,8 @@ const SWARM_ROLE = process.env.SWARM_ROLE || 'host'
 const CDP_PROXY_PORT = parseInt(process.env.CDP_PROXY_PORT || '9230', 10)
 const WS_AUDIO_PORT = parseInt(process.env.WS_AUDIO_PORT || '9888', 10)
 const WINDOW_TITLE = 'Discord Voice Bridge'
+const VDO_ROOM = process.env.VDO_NINJA_ROOM || ''
+const VDO_ID = process.env.VDO_NINJA_STREAM_ID || Math.random().toString(36).slice(2, 8)
 
 app.commandLine.appendSwitch('remote-debugging-port', CDP_PORT)
 app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1')
@@ -28,8 +30,7 @@ let botClient = null
 let swarmMod = null
 let hostMod = null
 
-process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err))
-process.on('uncaughtException', (err) => console.error('[uncaughtException]', err))
+for (const e of ['unhandledRejection', 'uncaughtException']) process.on(e, (err) => console.error(`[${e}]`, err))
 
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
 const CHROME_VERSION = '134'
@@ -94,21 +95,19 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; if (hostMod) hostMod.stopScreenCapture() })
 }
 
+const mw = () => mainWindow && !mainWindow.isDestroyed()
 ipcMain.on('log', (_, msg) => console.log('[renderer]', msg))
-ipcMain.on('nav-back', () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.goBack() })
-ipcMain.on('nav-forward', () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.goForward() })
-ipcMain.on('nav-go', (_, url) => {
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.loadURL(url).catch((e) => console.error('[nav-go]', e.message))
-})
+ipcMain.on('nav-back', () => { if (mw()) mainWindow.webContents.goBack() })
+ipcMain.on('nav-forward', () => { if (mw()) mainWindow.webContents.goForward() })
+ipcMain.on('nav-go', (_, url) => { if (mw()) mainWindow.webContents.loadURL(url).catch((e) => console.error('[nav-go]', e.message)) })
 
 let _audioFrameCount = 0
 ipcMain.on('audio-pcm', (_, arrayBuffer) => {
   const buf = Buffer.isBuffer(arrayBuffer) ? arrayBuffer : Buffer.from(arrayBuffer)
   const f32 = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4)
   _audioFrameCount++
-  if (_audioFrameCount <= 5 || _audioFrameCount % 500 === 0) {
+  if (_audioFrameCount <= 5 || _audioFrameCount % 500 === 0)
     console.log(`[main] audio-pcm #${_audioFrameCount} samples=${f32.length} peak=${Math.max(...f32).toFixed(4)}`)
-  }
   pushAudioFrame(f32)
   if (swarmMod && SWARM_ROLE === 'host') swarmMod.sendAudio(f32)
 })
@@ -117,23 +116,17 @@ async function startP2P() {
   if (!SWARM_TOPIC) return
   swarmMod = await import('./p2p/swarm.js')
   hostMod = await import('./p2p/host.js')
-  const { startCdpProxy, onSwarmCdpUp, onSwarmCdpDown, onPeerConnect, onPeerDisconnect } = await import('./p2p/cdp-proxy.js')
+  const cdp = await import('./p2p/cdp-proxy.js')
   await swarmMod.startSwarm(SWARM_TOPIC, SWARM_ROLE, {
     onAudio: (f32) => { if (SWARM_ROLE === 'client') pushAudioFrame(f32) },
-    onFrame: (jpegBuf) => {
-      if (SWARM_ROLE === 'client' && mainWindow && !mainWindow.isDestroyed())
-        mainWindow.webContents.send('screen-frame', jpegBuf.toString('base64'))
-    },
-    onCdpUp: (buf, conn) => onSwarmCdpUp(buf, conn),
-    onCdpDown: (buf) => onSwarmCdpDown(buf),
-    onInput: (evt) => {
-      if (SWARM_ROLE === 'host' && mainWindow && !mainWindow.isDestroyed())
-        try { mainWindow.webContents.sendInputEvent(evt) } catch {}
-    },
-    onConnect: (conn) => { console.log('[p2p] peer connected'); if (SWARM_ROLE === 'host') onPeerConnect(conn) },
-    onDisconnect: (conn) => { console.log('[p2p] peer disconnected'); if (SWARM_ROLE === 'host') onPeerDisconnect(conn) },
+    onFrame: (buf) => { if (SWARM_ROLE === 'client' && mw()) mainWindow.webContents.send('screen-frame', buf.toString('base64')) },
+    onCdpUp: (buf, conn) => cdp.onSwarmCdpUp(buf, conn),
+    onCdpDown: (buf) => cdp.onSwarmCdpDown(buf),
+    onInput: (evt) => { if (SWARM_ROLE === 'host' && mw()) try { mainWindow.webContents.sendInputEvent(evt) } catch {} },
+    onConnect: (conn) => { console.log('[p2p] peer connected'); if (SWARM_ROLE === 'host') cdp.onPeerConnect(conn) },
+    onDisconnect: (conn) => { console.log('[p2p] peer disconnected'); if (SWARM_ROLE === 'host') cdp.onPeerDisconnect(conn) },
   })
-  startCdpProxy(SWARM_ROLE, parseInt(CDP_PORT, 10), CDP_PROXY_PORT)
+  cdp.startCdpProxy(SWARM_ROLE, parseInt(CDP_PORT, 10), CDP_PROXY_PORT)
   console.log(`[p2p] started as ${SWARM_ROLE}`)
 }
 
@@ -143,8 +136,7 @@ function startWsServer() {
     ws.on('message', (data, isBinary) => {
       if (!isBinary) return
       const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
-      const f32 = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4)
-      pushAudioFrame(f32)
+      pushAudioFrame(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4))
     })
     ws.on('error', () => {})
   })
@@ -153,16 +145,15 @@ function startWsServer() {
 }
 
 async function startBot() {
-  if (!process.env.DISCORD_BOT_TOKEN || !process.env.GUILD_ID || !process.env.CHANNEL_ID) {
-    console.warn('[bot] BOT_TOKEN, GUILD_ID, or CHANNEL_ID not set — bot disabled'); return
-  }
+  const { DISCORD_BOT_TOKEN: tok, GUILD_ID: gid, CHANNEL_ID: cid } = process.env
+  if (!tok || !gid || !cid) { console.warn('[bot] BOT_TOKEN, GUILD_ID, or CHANNEL_ID not set — bot disabled'); return }
   botClient = createClient()
   let _connecting = false
   const connectVoice = async () => {
     if (_connecting) return
     _connecting = true
     try {
-      const { voiceConnection } = await joinDiscordVoice(botClient, process.env.GUILD_ID, process.env.CHANNEL_ID)
+      const { voiceConnection } = await joinDiscordVoice(botClient, gid, cid)
       console.log('[bot] Joined voice channel')
       initVoicePlayer(voiceConnection)
       voiceConnection.once('stateChange', (o, n) => {
@@ -175,21 +166,32 @@ async function startBot() {
   }
   botClient.on('ready', async () => { console.log(`[bot] ${botClient.user.tag}`); await connectVoice() })
   botClient.on('error', (err) => console.error('[bot] error:', err.message))
-  botClient.login(process.env.DISCORD_BOT_TOKEN).catch((e) => console.error('[bot] login failed:', e.message))
+  botClient.login(tok).catch((e) => console.error('[bot] login failed:', e.message))
+}
+
+function startVdoNinja() {
+  if (!VDO_ROOM) return
+  const s = session.fromPartition('persist:vdo')
+  s.setPermissionRequestHandler((_, __, cb) => cb(true)); s.setPermissionCheckHandler(() => true)
+  const w = new BrowserWindow({ show: false, webPreferences: {
+    preload: path.join(__dirname, 'electron', 'vdo-bridge.cjs'),
+    contextIsolation: false, webSecurity: false, allowRunningInsecureContent: true,
+    autoplayPolicy: 'no-user-gesture-required', partition: 'persist:vdo',
+  } })
+  w.loadURL(`https://vdo.ninja/?push=${VDO_ID}&room=${VDO_ROOM}&autostart=1&webcam&label=jerryrig`)
+  w.webContents.on('console-message', (_, level, msg) => { if (level >= 2) console.error('[vdo]', msg) })
+  console.log(`[vdo] View at: https://vdo.ninja/?view=${VDO_ID}&room=${VDO_ROOM}`)
 }
 
 app.on('ready', async () => {
   session.defaultSession.setPermissionRequestHandler((_, p, cb) => cb(['media', 'display-capture'].includes(p)))
   createWindow()
   startWsServer()
+  startVdoNinja()
   await startP2P()
   await startBot()
 })
 
-app.on('before-quit', () => {
-  leaveVoice(); stopAudio()
-  if (hostMod) hostMod.stopScreenCapture()
-  if (swarmMod) swarmMod.destroySwarm()
-})
+app.on('before-quit', () => { leaveVoice(); stopAudio(); if (hostMod) hostMod.stopScreenCapture(); if (swarmMod) swarmMod.destroySwarm() })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 app.on('activate', () => { if (!mainWindow) createWindow() })
