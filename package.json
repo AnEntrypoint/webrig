@@ -4,6 +4,21 @@
   "description": "General-purpose Electron browser with audio routing to Discord",
   "main": "src/main.js",
   "type": "module",
+  "exports": {
+    "./companion": "./companion/index.js",
+    "./bot": "./src/bot/client.js",
+    "./voice": "./src/bot/voice.js",
+    "./swarm": "./src/p2p/swarm.js",
+    "./client": "./src/p2p/client.js"
+  },
+  "files": [
+    "src/bot",
+    "src/p2p",
+    "companion",
+    "src/electron/capture-worklet.js",
+    ".env.example",
+    "README.md"
+  ],
   "scripts": {
     "start": "electron .",
     "start:debug": "electron . --enable-logging",

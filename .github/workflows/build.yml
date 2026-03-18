@@ -9,21 +9,42 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    runs-on: windows-latest
+  bump-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Bump patch version
+      - name: Bump patch version and push
         id: version
         run: |
-          $ver = node -e "const p=require('./package.json'); const parts=p.version.split('.'); parts[2]=parseInt(parts[2])+1; console.log(parts.join('.'))"
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          ver=$(node -e "const p=require('./package.json'); const parts=p.version.split('.'); parts[2]=parseInt(parts[2])+1; console.log(parts.join('.'))")
           npm version $ver --no-git-tag-version
-          echo "version=$ver" >> $env:GITHUB_OUTPUT
+          git add package.json
+          git commit -m "chore: bump version to $ver [skip ci]"
+          git push
+          echo "version=$ver" >> $GITHUB_OUTPUT
+
+  build:
+    needs: bump-version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps
@@ -36,9 +57,30 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: v${{ steps.version.outputs.version }}
+          tag_name: v${{ needs.bump-version.outputs.version }}
+          name: v${{ needs.bump-version.outputs.version }}
           files: dist/*.exe
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-npm:
+    needs: bump-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
