@@ -73,14 +73,26 @@ All navbar, spoof, and youtube ad-skip logic is inlined directly in `preload.cjs
 ### Guild/channel cache on ready
 With discord.js v14, the guild and channel cache may not be populated immediately on `ready`. `joinDiscordVoice` explicitly calls `guilds.fetch()` and `guild.channels.fetch()` if the cache misses.
 
+### Voice join: gateway leave + retry backoff
+Before joining, `joinDiscordVoice` sends a gateway voice-leave op (op 4 with `channel_id: null`) and waits up to 5s for Discord to confirm via `voiceStateUpdate` — this clears any stale session. Then it retries up to 8 times with variable backoff: close code 4017 → 10s, 4006 → 8s, anything else → 4s.
+
 ### AudioPlayer idle after silence
 When no audio frames arrive, the AudioPlayer goes idle (resource stream ends or stalls). The `AudioPlayerStatus.Idle` handler calls `_startPlayback()` to reset the PassThrough + encoder pipeline and continue playing.
 
-### AudioContext in preload isolated world
-With `contextIsolation: true`, the preload runs in a separate world but has access to Web Audio API. Inbound audio playback goes to system speakers regardless of what page is loaded.
+### contextIsolation is false on the main BrowserWindow
+`main.js` creates the BrowserWindow with `contextIsolation: false`. This means `require('electron')` in the preload is available directly in the page's JS world. Inbound audio playback goes to system speakers regardless of what page is loaded.
 
 ### Audio capture via Web Audio tap (not desktopCapturer)
 The preload patches `window.AudioContext` to intercept all page-created contexts. Each context gets a `MediaStreamDestination` tap; `AudioNode.prototype.connect` is patched to mirror connections to destination into the tap. `<audio>`/`<video>` elements are captured via `createMediaElementSource`. A periodic scan every 2s catches elements added after the MutationObserver fires. `display-capture` permission is granted in `setPermissionRequestHandler` but is no longer required for this approach.
+
+### WS audio server also runs in Electron host
+`main.js` starts a WebSocketServer on `WS_AUDIO_PORT` (default 9888) that accepts raw Float32 binary frames from any local client (same format as the extension sends to companion). This allows the companion to be skipped when only Discord audio bridging is needed.
+
+### host.js uses WINDOW_TITLE to find the window for screen capture
+`src/p2p/host.js` calls `desktopCapturer.getSources` every 100ms and matches by `name === 'Discord Voice Bridge'` (the hardcoded `WINDOW_TITLE` constant shared with `main.js`). If the window title changes or no window matches, it falls back to `sources[0]`.
+
+### audio-pcm IPC is also forwarded to swarm peers
+When `SWARM_ROLE=host`, each `audio-pcm` frame received from the renderer is forwarded to all connected swarm peers via `swarmMod.sendAudio(f32)` in addition to being pushed to the local AudioPlayer.
 
 ## agent-browser (CDP)
 
@@ -134,6 +146,10 @@ Input payload: JSON string of a CDP Input event (`{ type, ...fields }`).
 The Electron host captures audio via Web Audio API tap in the preload. The extension uses `chrome.tabCapture` + `getUserMedia` in an offscreen document. CDP in Electron is the built-in `--remote-debugging-port` server. CDP in the extension is `chrome.debugger` attached to the active tab and bridged over WebSocket.
 
 ## Hyperswarm Multi-Client Architecture
+
+### SWARM_ROLE=client (legacy Electron viewer)
+
+When `SWARM_ROLE=client`, the Electron app loads `src/electron/remote-view.html` instead of `TARGET_URL`. This page listens for `screen-frame` IPC events (base64-encoded JPEG) and renders them as a live view. The preferred approach for headless remote control is the headless CDP client below.
 
 ### Headless CDP client (`src/p2p/client.js`)
 
