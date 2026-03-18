@@ -77,10 +77,16 @@ With discord.js v14, the guild and channel cache may not be populated immediatel
 Before joining, `joinDiscordVoice` sends a gateway voice-leave op (op 4 with `channel_id: null`) and waits up to 5s for Discord to confirm via `voiceStateUpdate` — this clears any stale session. Then it retries up to 8 times with variable backoff: close code 4017 → 10s, 4006 → 8s, anything else → 4s.
 
 ### AudioPlayer idle after silence
-When no audio frames arrive, the AudioPlayer goes idle (resource stream ends or stalls). The `AudioPlayerStatus.Idle` handler calls `_startPlayback()` to reset the PassThrough + encoder pipeline and continue playing.
+When no audio frames arrive, the AudioPlayer goes idle (resource stream ends or stalls). The `AudioPlayerStatus.Idle` handler calls `_makeStream()` to create a fresh PassThrough + Opus encoder pipeline and immediately calls `audioPlayer.play(resource)` to resume.
 
 ### contextIsolation is false on the main BrowserWindow
 `main.js` creates the BrowserWindow with `contextIsolation: false`. This means `require('electron')` in the preload is available directly in the page's JS world. Inbound audio playback goes to system speakers regardless of what page is loaded.
+
+### Main window audio is muted at the Electron level
+`mainWindow.webContents.setAudioMuted(true)` is called in `createWindow()`. The captured audio goes to Discord via the PCM pipeline; local playback of the captured source is suppressed. Inbound Discord audio is played back via the Web Audio API in the preload, which bypasses the mute.
+
+### Chrome header spoofing at session level
+The main session (`persist:main`) intercepts all outgoing requests via `webRequest.onBeforeSendHeaders` to inject a full Chrome UA, `sec-ch-ua`, `sec-ch-ua-platform`, `sec-ch-ua-mobile`, `Accept-Language`, and standard `Sec-Fetch-*` headers. It also strips `Content-Security-Policy` response headers via `onHeadersReceived`. The preload performs a parallel DOM-level spoof (navigator properties, `Function.prototype.toString` nativization) for JS-detectable signals.
 
 ### Audio capture via Web Audio tap (not desktopCapturer)
 The preload patches `window.AudioContext` to intercept all page-created contexts. Each context gets a `MediaStreamDestination` tap; `AudioNode.prototype.connect` is patched to mirror connections to destination into the tap. `<audio>`/`<video>` elements are captured via `createMediaElementSource`. A periodic scan every 2s catches elements added after the MutationObserver fires. `display-capture` permission is granted in `setPermissionRequestHandler` but is no longer required for this approach.
@@ -93,6 +99,12 @@ The preload patches `window.AudioContext` to intercept all page-created contexts
 
 ### audio-pcm IPC is also forwarded to swarm peers
 When `SWARM_ROLE=host`, each `audio-pcm` frame received from the renderer is forwarded to all connected swarm peers via `swarmMod.sendAudio(f32)` in addition to being pushed to the local AudioPlayer.
+
+### PCM accumulation buffer in voice.js
+`pushAudioFrame` accumulates incoming Float32 frames into `_accumBuf` and writes to the PassThrough stream only in exact `FRAME`-sized chunks (960 × 2 channels × 2 bytes = 3840 bytes). This ensures the Opus encoder always receives complete stereo frames regardless of the size of incoming IPC payloads.
+
+### voice.js Disconnected state handler calls rejoin
+`initVoicePlayer` attaches a `stateChange` listener on the voice connection. When the connection enters `Disconnected`, it calls `connection.rejoin()` to attempt recovery before the 15s reconnect timer in `main.js` fires.
 
 ## agent-browser (CDP)
 
@@ -121,9 +133,11 @@ The `extension/` directory contains a Chrome extension that can replace the Elec
 
 All binary WebSocket messages use the same 4+4+N framing as `src/p2p/swarm.js`:
 
-- Bytes 0–3: message type as LE uint32 (AUDIO=1, FRAME=2, INPUT=5)
+- Bytes 0–3: message type as LE uint32 (AUDIO=1, FRAME=2, CDP_UP=3, CDP_DOWN=4, INPUT=5)
 - Bytes 4–7: payload length as LE uint32
 - Bytes 8+: payload
+
+CDP_UP (3) and CDP_DOWN (4) are used on the Hyperswarm channel only — headless clients send CDP_UP frames to the host; the host sends CDP_DOWN responses back. The extension-to-companion CDP bridge uses a separate WebSocket (port 9231) with plain JSON, not the framed protocol.
 
 Audio payload: interleaved stereo Float32Array (48 kHz, 4096-sample frames).
 Frame payload: fragmented webm chunks from MediaRecorder (AV1 or H264, 100ms timeslice). Was JPEG; replaced with MediaRecorder for compressed video.
@@ -131,8 +145,8 @@ Input payload: JSON string of a CDP Input event (`{ type, ...fields }`).
 
 ### Extension Files
 
-- `extension/offscreen.js` — Runs in the offscreen document. Captures tab audio and video via `getUserMedia` with `chromeMediaSource: tab`. Sends AUDIO (type=1) Float32 frames via ScriptProcessorNode and FRAME (type=2) webm chunks via MediaRecorder (AV1→H264→webm fallback, 100ms timeslice) to `ws://127.0.0.1:9888`.
-- `extension/background.js` — Service worker. Gets `tabCapture` stream ID, attaches `chrome.debugger` to the tab, opens a second WebSocket to `ws://127.0.0.1:9231` for CDP bidirectional bridging, and dispatches INPUT (type=5) messages from the main WS as `chrome.debugger` Input events.
+- `extension/offscreen.js` — Runs in the offscreen document. Captures tab audio and video via `getUserMedia` with `chromeMediaSource: tab`. Tries audio+video first; falls back to audio-only if the tab has no video track. Sends AUDIO (type=1) Float32 frames via ScriptProcessorNode and FRAME (type=2) webm chunks via MediaRecorder (AV1→H264→webm fallback, 100ms timeslice) to `ws://127.0.0.1:9888`.
+- `extension/background.js` — Service worker. Gets `tabCapture` stream ID, attaches `chrome.debugger` to the tab, opens a second WebSocket to `ws://127.0.0.1:9231` for CDP bidirectional bridging (plain JSON, not framed), and dispatches INPUT (type=5) messages from the main WS as `chrome.debugger` Input events. INPUT dispatch uses `chrome.debugger.sendCommand` with `Input.dispatchMouseEvent` or `Input.dispatchKeyEvent` depending on the `evt.type` field.
 - `extension/popup.js` / `extension/popup.html` — UI with two URL inputs (audio/video WS and CDP WS) and status indicators for both connections.
 - `extension/manifest.json` — MV3, requires `tabCapture`, `offscreen`, `storage`, `activeTab`, `debugger` permissions.
 
@@ -150,6 +164,8 @@ The Electron host captures audio via Web Audio API tap in the preload. The exten
 ### SWARM_ROLE=client (legacy Electron viewer)
 
 When `SWARM_ROLE=client`, the Electron app loads `src/electron/remote-view.html` instead of `TARGET_URL`. This page listens for `screen-frame` IPC events (base64-encoded JPEG) and renders them as a live view. The preferred approach for headless remote control is the headless CDP client below.
+
+Note: `remote-view.html` expects JPEG frames (base64 `data:image/jpeg`). The P2P frame pipeline now sends fragmented webm via MediaRecorder. The SWARM_ROLE=client Electron viewer is a legacy path and not suitable for the current webm video stream — use `docs/viewer.html` with VDO.Ninja for a current viewer.
 
 ### Headless CDP client (`src/p2p/client.js`)
 
@@ -210,6 +226,9 @@ On the host side, each swarm peer gets its own WebSocket connection to the Elect
 - `src/bot/client.js` — discord.js v14 login, voice join, Opus decode
 - `src/p2p/swarm.js` — Hyperswarm multi-peer management, framed binary protocol
 
+### Companion swarm audio routing
+When `SWARM_TOPIC` is set, inbound swarm AUDIO frames are routed in two directions simultaneously: `pushAudioFrame` sends them to the Discord voice pipeline AND `sendToExtension` relays them back to the browser extension over port 9888. This allows the KVM viewer to receive audio from the swarm host.
+
 ## VDO.Ninja Relay
 
 Set `VDO_NINJA_ROOM` (and optionally `VDO_NINJA_STREAM_ID`) in `.env` to enable. On app ready, a hidden BrowserWindow loads the VDO.Ninja push URL with `vdo-bridge.cjs` as its preload.
@@ -248,7 +267,10 @@ GitHub Pages compatible. Load with `?room=ROOM&stream=STREAMID&ws=ws://...`.
 - `src/bot/client.js` — discord.js v14 login, @discordjs/voice join, Opus decode, audio IPC send
 - `src/bot/voice.js` — PCM PassThrough → Opus encoder → AudioResource → AudioPlayer
 - `src/electron/preload.cjs` — Chrome compat spoof, navbar, audio capture (AudioWorklet intercept) + inbound playback
+- `src/electron/capture-worklet.js` — AudioWorklet processor (`capture-processor`) loaded by preload; collects 960-sample frames and posts them via `port.postMessage`
 - `src/electron/vdo-bridge.cjs` — VDO.Ninja hidden window preload: MediaSource webm + AudioContext → getUserMedia override
+- `src/electron/remote-view.html` — Legacy SWARM_ROLE=client viewer: renders base64 JPEG screen frames received via `screen-frame` IPC
 - `src/electron/error.html` — Fallback page if TARGET_URL fails
+- `companion/index.js` — Standalone Node.js bridge: Discord voice, CDP server for agent-browser, Hyperswarm relay
 - `docs/viewer.html` — KVM viewer: VDO.Ninja iframe + input overlay + WS INPUT dispatch
 - `.env.example` — All configurable variables
