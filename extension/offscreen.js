@@ -80,14 +80,18 @@ async function startCapture(streamId, url) {
   active = true
   connectWs()
 
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: {
-      mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId }
-    },
-    video: {
-      mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId }
-    }
-  })
+  let stream
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } },
+      video: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } }
+    })
+  } catch (_) {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: streamId } },
+      video: false
+    })
+  }
 
   const vTrack = stream.getVideoTracks()[0]
   if (vTrack) {

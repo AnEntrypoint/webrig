@@ -25,10 +25,15 @@ function encode(type, payload) {
 }
 
 let extensionWs = null
+let extensionCdpWs = null
 let agentBrowserSockets = new Set()
 
 function sendToExtension(type, payload) {
   if (extensionWs?.readyState === WebSocket.OPEN) extensionWs.send(encode(type, payload))
+}
+
+function sendCdpToExtension(buf) {
+  if (extensionCdpWs?.readyState === WebSocket.OPEN) extensionCdpWs.send(buf)
 }
 
 function broadcastCdpDown(buf) {
@@ -81,7 +86,7 @@ cdpWss.on('connection', (ws) => {
   agentBrowserSockets.add(ws)
   ws.on('message', (data) => {
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
-    sendToExtension(MSG.CDP_UP, buf)
+    sendCdpToExtension(buf)
   })
   ws.on('close', () => agentBrowserSockets.delete(ws))
   ws.on('error', () => {})
@@ -119,12 +124,14 @@ cdpHttp.listen(CDP_BRIDGE_HTTP_PORT, '127.0.0.1', () => {
 
 const cdpExtWss = new WebSocketServer({ port: CDP_PROXY_PORT, host: '127.0.0.1' })
 cdpExtWss.on('connection', (ws) => {
+  extensionCdpWs = ws
   ws.on('message', (data) => {
     const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
-    sendToExtension(MSG.CDP_UP, buf)
+    broadcastCdpDown(buf)
   })
+  ws.on('close', () => { if (extensionCdpWs === ws) extensionCdpWs = null })
   ws.on('error', () => {})
-  console.log('[companion] CDP ext WS client connected on', CDP_PROXY_PORT)
+  console.log('[companion] extension CDP connected on', CDP_PROXY_PORT)
 })
 console.log('[companion] CDP ext WS listening on', CDP_PROXY_PORT)
 
@@ -136,7 +143,7 @@ if (SWARM_TOPIC) {
     },
     onFrame: (buf) => sendToExtension(MSG.FRAME, buf),
     onInput: (evt) => sendToExtension(MSG.INPUT, Buffer.from(JSON.stringify(evt))),
-    onCdpUp: (buf) => sendToExtension(MSG.CDP_UP, buf),
+    onCdpUp: (buf) => sendCdpToExtension(buf),
     onCdpDown: (buf) => broadcastCdpDown(buf),
   })
   console.log('[companion] Hyperswarm started, topic:', SWARM_TOPIC)
