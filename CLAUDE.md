@@ -159,6 +159,41 @@ Input payload: JSON string of a CDP Input event (`{ type, ...fields }`).
 
 The Electron host captures audio via Web Audio API tap in the preload. The extension uses `chrome.tabCapture` + `getUserMedia` in an offscreen document. CDP in Electron is the built-in `--remote-debugging-port` server. CDP in the extension is `chrome.debugger` attached to the active tab and bridged over WebSocket.
 
+## Firefox Extension Host Mode
+
+The `firefox/` directory contains a Firefox extension that provides the same capabilities as the Chrome extension (audio relay, video relay, CDP passthrough, input forwarding) using Manifest V2 and Firefox WebExtension APIs.
+
+### Key Differences from the Chrome Extension
+
+**Manifest V2 vs V3**: Firefox uses `manifest_version: 2`, `browser_action` (not `action`), and a persistent background script array (not a service worker). The background page persists for the lifetime of the extension.
+
+**No offscreen document**: Chrome MV3 service workers cannot access WebAPIs like `AudioContext` or `MediaRecorder` directly, requiring an offscreen document. Firefox's persistent background page has full WebAPI access, so audio and video capture run directly in `background.js`.
+
+**`tabCapture.capture()` vs `getMediaStreamId()`**: Firefox supports `browser.tabCapture.capture()` which returns a `MediaStream` directly in the background page. Chrome MV3 uses `chrome.tabCapture.getMediaStreamId()` to pass a stream ID to the offscreen document. The Firefox path is simpler: one call, one context, no message passing.
+
+**ScriptProcessorNode for audio**: `AudioWorkletNode` is not available in Firefox extension background pages. `background.js` uses `createScriptProcessor(4096, 2, 2)` instead. The 4096-sample buffer is interleaved to stereo Float32 and sent as AUDIO (type=1) framed binary to the WebSocket.
+
+**Cross-browser API shim**: `background.js` and `popup.js` open with `const api = typeof browser !== 'undefined' ? browser : chrome`. All extension API calls go through `api`, making the code runnable in both Firefox (Promise-based `browser.*`) and Chrome (callback-based `chrome.*`).
+
+**Promise-based debugger API**: Firefox's `browser.debugger` supports Promises natively. `attachDebugger` uses `.then()` chaining via the `api` shim instead of callback-based `chrome.debugger.attach`.
+
+### Firefox Extension Files
+
+- `firefox/background.js` — Persistent background page. Captures tab audio+video via `api.tabCapture.capture()`, processes audio with `ScriptProcessorNode`, encodes video with `MediaRecorder` (AV1→H264→webm, 100ms timeslice), sends framed binary to `ws://127.0.0.1:9888`, bridges CDP commands/events to `ws://127.0.0.1:9231`, dispatches INPUT (type=5) frames via `api.debugger.sendCommand`.
+- `firefox/popup.js` / `firefox/popup.html` — UI with two URL inputs (audio/video WS and CDP WS) and status indicators. Identical UX to the Chrome extension popup.
+- `firefox/manifest.json` — MV2, `persistent: true` background, requires `tabCapture`, `storage`, `activeTab`, `debugger`, `tabs`, `<all_urls>` permissions.
+
+### Ports
+
+Same as Chrome extension:
+
+- `ws://127.0.0.1:9888` — audio PCM + webm video frames + INPUT dispatch (main data channel)
+- `ws://127.0.0.1:9231` — CDP command/event bridge (extension tab debugger ↔ companion/jerryrig)
+
+### Framing Protocol
+
+Identical 4+4+N framing as the Chrome extension and `src/p2p/swarm.js`. AUDIO=1, FRAME=2, INPUT=5. Audio payload: interleaved stereo Float32Array (48 kHz, 4096-sample frames). Frame payload: fragmented webm chunks (100ms timeslice).
+
 ## Hyperswarm Multi-Client Architecture
 
 ### SWARM_ROLE=client (legacy Electron viewer)
@@ -271,6 +306,9 @@ GitHub Pages compatible. Load with `?room=ROOM&stream=STREAMID&ws=ws://...`.
 - `src/electron/vdo-bridge.cjs` — VDO.Ninja hidden window preload: MediaSource webm + AudioContext → getUserMedia override
 - `src/electron/remote-view.html` — Legacy SWARM_ROLE=client viewer: renders base64 JPEG screen frames received via `screen-frame` IPC
 - `src/electron/error.html` — Fallback page if TARGET_URL fails
+- `firefox/background.js` — Firefox MV2 persistent background: tabCapture → ScriptProcessorNode audio + MediaRecorder video → framed WS; debugger CDP bridge + INPUT dispatch
+- `firefox/popup.js` / `firefox/popup.html` — Firefox extension popup UI: WS/CDP URL inputs, start/stop, status display
+- `firefox/manifest.json` — Firefox MV2 manifest: persistent background, tabCapture/debugger/tabs permissions
 - `companion/index.js` — Standalone Node.js bridge: Discord voice, CDP server for agent-browser, Hyperswarm relay
 - `docs/viewer.html` — KVM viewer: VDO.Ninja iframe + input overlay + WS INPUT dispatch
 - `.env.example` — All configurable variables
