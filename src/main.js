@@ -25,13 +25,8 @@ app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled')
 app.commandLine.appendSwitch('disable-features', 'MediaRouter')
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
-let mainWindow = null
-let botClient = null
-let swarmMod = null
-let hostMod = null
-
+let mainWindow = null, botClient = null, swarmMod = null, hostMod = null
 for (const e of ['unhandledRejection', 'uncaughtException']) process.on(e, (err) => console.error(`[${e}]`, err))
-
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
 const CHROME_VERSION = '134'
 
@@ -171,6 +166,8 @@ async function startBot() {
 
 function startVdoNinja() {
   if (!VDO_ROOM) return
+  if (!/^[a-zA-Z0-9_-]{1,40}$/.test(VDO_ROOM)) { console.error('[vdo] invalid VDO_NINJA_ROOM:', VDO_ROOM); return }
+  if (!/^[a-zA-Z0-9]{1,20}$/.test(VDO_ID)) { console.error('[vdo] invalid VDO_NINJA_STREAM_ID:', VDO_ID); return }
   const s = session.fromPartition('persist:vdo')
   s.setPermissionRequestHandler((_, __, cb) => cb(true)); s.setPermissionCheckHandler(() => true)
   const w = new BrowserWindow({ show: false, webPreferences: {
@@ -178,9 +175,14 @@ function startVdoNinja() {
     contextIsolation: false, webSecurity: false, allowRunningInsecureContent: true,
     autoplayPolicy: 'no-user-gesture-required', partition: 'persist:vdo',
   } })
-  w.loadURL(`https://vdo.ninja/?push=${VDO_ID}&room=${VDO_ROOM}&autostart=1&webcam&label=jerryrig`)
-  w.webContents.on('console-message', (_, level, msg) => { if (level >= 2) console.error('[vdo]', msg) })
-  console.log(`[vdo] View at: https://vdo.ninja/?view=${VDO_ID}&room=${VDO_ROOM}`)
+  const url = `https://vdo.ninja/?push=${encodeURIComponent(VDO_ID)}&room=${encodeURIComponent(VDO_ROOM)}&autostart=1&webcam&label=jerryrig`
+  w.loadURL(url).catch((e) => console.error('[vdo] loadURL failed:', e.message))
+  const wc = w.webContents
+  for (const [ev, fn] of [['console-message', (_, l, m) => { if (l >= 2) console.error('[vdo]', m) }],
+    ['render-process-gone', (_, d) => console.error('[vdo] crash:', d.reason)],
+    ['unresponsive', () => console.warn('[vdo] unresponsive')],
+    ['did-fail-load', (_, c, d) => console.error('[vdo] load failed:', c, d)]]) wc.on(ev, fn)
+  console.log(`[vdo] room=${VDO_ROOM} stream=${VDO_ID} | view: https://vdo.ninja/?view=${VDO_ID}&room=${VDO_ROOM}`)
 }
 
 app.on('ready', async () => {
@@ -193,5 +195,4 @@ app.on('ready', async () => {
 })
 
 app.on('before-quit', () => { leaveVoice(); stopAudio(); if (hostMod) hostMod.stopScreenCapture(); if (swarmMod) swarmMod.destroySwarm() })
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
-app.on('activate', () => { if (!mainWindow) createWindow() })
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() }); app.on('activate', () => { if (!mainWindow) createWindow() })
