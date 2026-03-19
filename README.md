@@ -1,4 +1,4 @@
-# Jerryrig
+# Webrig
 
 A general-purpose Electron browser with audio routing capabilities. It loads any web page in a full Chromium window and can stream that window's audio out to a Discord voice channel.
 
@@ -28,7 +28,7 @@ The Discord integration is one output channel — audio captured from whatever i
 
 ```
 git clone <repo>
-cd screens
+cd webrig
 npm install --legacy-peer-deps
 cp .env.example .env
 ```
@@ -77,6 +77,6 @@ agent-browser screenshot
 npm run build
 ```
 
-Produces a Windows NSIS installer at `dist/Jerryrig Setup x.x.x.exe`.
+Produces a Windows NSIS installer at `dist/Webrig Setup x.x.x.exe`.
 
-Releases are also built automatically on every push to master at [AnEntrypoint/jerryrig](https://github.com/AnEntrypoint/jerryrig/releases).
+Releases are also built automatically on every push to master at [AnEntrypoint/webrig](https://github.com/AnEntrypoint/webrig/releases).

@@ -177,7 +177,7 @@ function startVdoNinja() {
     contextIsolation: false, webSecurity: false, allowRunningInsecureContent: true,
     autoplayPolicy: 'no-user-gesture-required', partition: 'persist:vdo',
   } })
-  const url = `https://vdo.ninja/?push=${encodeURIComponent(VDO_ID)}&room=${encodeURIComponent(VDO_ROOM)}&autostart=1&webcam&label=jerryrig`
+  const url = `https://vdo.ninja/?push=${encodeURIComponent(VDO_ID)}&room=${encodeURIComponent(VDO_ROOM)}&autostart=1&webcam&label=webrig`
   w.loadURL(url).catch((e) => console.error('[vdo] loadURL failed:', e.message))
   const wc = w.webContents
   for (const [ev, fn] of [['console-message', (_, l, m) => { if (l >= 2) console.error('[vdo]', m) }],

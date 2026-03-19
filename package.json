@@ -43,8 +43,8 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.jerryrig.app",
-    "productName": "Jerryrig",
+    "appId": "com.webrig.app",
+    "productName": "Webrig",
     "forceCodeSigning": false,
     "asar": true,
     "extraResources": [
@@ -56,7 +56,7 @@
     "publish": {
       "provider": "github",
       "owner": "AnEntrypoint",
-      "repo": "jerryrig"
+      "repo": "webrig"
     },
     "files": [
       "src/**/*",

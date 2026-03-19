@@ -1,4 +1,4 @@
-# Jerryrig — Architecture
+# Webrig — Architecture
 
 ## System Overview
 

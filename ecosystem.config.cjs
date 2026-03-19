@@ -5,7 +5,7 @@ const electronPath = process.platform === 'win32'
 
 module.exports = {
   apps: [{
-    name: 'jerryrig',
+    name: 'webrig',
     script: electronPath,
     args: '. --remote-debugging-port=9229 --remote-debugging-address=127.0.0.1',
     cwd: __dirname,
