@@ -36,7 +36,28 @@ jobs:
 
   build:
     needs: bump-version
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            arch: x64
+            platform: win
+          - os: windows-latest
+            arch: arm64
+            platform: win
+          - os: macos-13
+            arch: x64
+            platform: mac
+          - os: macos-latest
+            arch: arm64
+            platform: mac
+          - os: ubuntu-latest
+            arch: x64
+            platform: linux
+          - os: ubuntu-latest
+            arch: arm64
+            platform: linux
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,21 +67,78 @@ jobs:
         with:
           node-version: 20
 
+      - name: Install Linux dependencies (x64)
+        if: matrix.platform == 'linux' && matrix.arch == 'x64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxext-dev libxss-dev libappindicator1 libappindicator3-1 libgconf-2-4
+
+      - name: Install Linux dependencies (arm64)
+        if: matrix.platform == 'linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxext-dev libxss-dev libappindicator1 libappindicator3-1 libgconf-2-4
+
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Build Windows installer
+      - name: Build Windows x64
+        if: matrix.platform == 'win' && matrix.arch == 'x64'
         run: npm run build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Windows arm64
+        if: matrix.platform == 'win' && matrix.arch == 'arm64'
+        run: npx electron-builder --win --arm64 --publish=never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build macOS
+        if: matrix.platform == 'mac'
+        run: npx electron-builder --mac ${{ matrix.arch == 'arm64' && '--arm64' || '' }} --publish=never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Linux
+        if: matrix.platform == 'linux'
+        run: npx electron-builder --linux ${{ matrix.arch == 'arm64' && '--arm64' || '' }} --publish=never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/
+          retention-days: 5
+
+  release:
+    needs: [bump-version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Collect release files
+        run: |
+          mkdir -p release-files
+          find all-artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.zip" \) -exec cp {} release-files/ \;
+          ls -lah release-files/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.bump-version.outputs.version }}
           name: v${{ needs.bump-version.outputs.version }}
-          files: dist/*.exe
-          fail_on_unmatched_files: true
+          files: release-files/*
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
