@@ -104,11 +104,14 @@ async function stopCapture() {
 function dispatchInput(tabId, payload) {
   let evt
   try { evt = JSON.parse(new TextDecoder().decode(payload)) } catch { return }
-  const method = evt.type === 'mouseEvent' ? 'Input.dispatchMouseEvent'
-    : evt.type === 'keyEvent' ? 'Input.dispatchKeyEvent'
+  const dispatchType = evt.dispatchType || evt.type
+  const method = dispatchType === 'mouseEvent' ? 'Input.dispatchMouseEvent'
+    : dispatchType === 'keyEvent' ? 'Input.dispatchKeyEvent'
     : null
   if (!method) return
-  chrome.debugger.sendCommand({ tabId }, method, evt, () => {
+  const params = Object.assign({}, evt)
+  delete params.dispatchType
+  chrome.debugger.sendCommand({ tabId }, method, params, () => {
     if (chrome.runtime.lastError) console.warn('[bg] input dispatch error:', chrome.runtime.lastError.message)
   })
 }

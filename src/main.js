@@ -19,11 +19,9 @@ const WINDOW_TITLE = 'Discord Voice Bridge'
 const VDO_ROOM = process.env.VDO_NINJA_ROOM || ''
 const VDO_ID = process.env.VDO_NINJA_STREAM_ID || Math.random().toString(36).slice(2, 8)
 
-app.commandLine.appendSwitch('remote-debugging-port', CDP_PORT)
-app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1')
-app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled')
-app.commandLine.appendSwitch('disable-features', 'MediaRouter')
-app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+for (const [k, v] of [['remote-debugging-port', CDP_PORT], ['remote-debugging-address', '127.0.0.1'],
+  ['disable-blink-features', 'AutomationControlled'], ['disable-features', 'MediaRouter'],
+  ['autoplay-policy', 'no-user-gesture-required']]) app.commandLine.appendSwitch(k, v)
 
 let mainWindow = null, botClient = null, swarmMod = null, hostMod = null
 for (const e of ['unhandledRejection', 'uncaughtException']) process.on(e, (err) => console.error(`[${e}]`, err))
@@ -33,8 +31,7 @@ const CHROME_VERSION = '134'
 function createWindow() {
   session.defaultSession.setUserAgent(CHROME_UA)
   const mainSession = session.fromPartition('persist:main')
-  mainSession.setPermissionRequestHandler((_, __, cb) => cb(true))
-  mainSession.setPermissionCheckHandler(() => true)
+  mainSession.setPermissionRequestHandler((_, __, cb) => cb(true)); mainSession.setPermissionCheckHandler(() => true)
   mainSession.webRequest.onHeadersReceived((details, cb) => {
     const h = details.responseHeaders
     if (!h) { cb({}); return }
@@ -50,10 +47,7 @@ function createWindow() {
     h['Accept-Language'] = 'en-US,en;q=0.9'
     if (!h['Accept']) h['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
     if (!h['Accept-Encoding']) h['Accept-Encoding'] = 'gzip, deflate, br, zstd'
-    if (!h['Sec-Fetch-Site']) h['Sec-Fetch-Site'] = 'none'
-    if (!h['Sec-Fetch-Mode']) h['Sec-Fetch-Mode'] = 'navigate'
-    if (!h['Sec-Fetch-Dest']) h['Sec-Fetch-Dest'] = 'document'
-    if (!h['Sec-Fetch-User']) h['Sec-Fetch-User'] = '?1'
+    for (const [k, v] of [['Sec-Fetch-Site','none'],['Sec-Fetch-Mode','navigate'],['Sec-Fetch-Dest','document'],['Sec-Fetch-User','?1']]) if (!h[k]) h[k] = v
     if (details.resourceType === 'mainFrame') { h['Upgrade-Insecure-Requests'] = '1'; h['Priority'] = 'u=0, i' }
     delete h['X-Powered-By']; cb({ requestHeaders: h })
   })
@@ -91,26 +85,23 @@ function createWindow() {
 }
 
 const mw = () => mainWindow && !mainWindow.isDestroyed()
-ipcMain.on('log', (_, msg) => console.log('[renderer]', msg))
-ipcMain.on('nav-back', () => { if (mw()) mainWindow.webContents.goBack() })
-ipcMain.on('nav-forward', () => { if (mw()) mainWindow.webContents.goForward() })
-ipcMain.on('nav-go', (_, url) => { if (mw()) mainWindow.webContents.loadURL(url).catch((e) => console.error('[nav-go]', e.message)) })
+for (const [ch, fn] of [['log', (_, m) => console.log('[renderer]', m)], ['nav-back', () => { if (mw()) mainWindow.webContents.goBack() }],
+  ['nav-forward', () => { if (mw()) mainWindow.webContents.goForward() }],
+  ['nav-go', (_, u) => { if (mw()) mainWindow.webContents.loadURL(u).catch(e => console.error('[nav]', e.message)) }]]) ipcMain.on(ch, fn)
 
 let _audioFrameCount = 0
 ipcMain.on('audio-pcm', (_, arrayBuffer) => {
   const buf = Buffer.isBuffer(arrayBuffer) ? arrayBuffer : Buffer.from(arrayBuffer)
   const f32 = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4)
-  _audioFrameCount++
-  if (_audioFrameCount <= 5 || _audioFrameCount % 500 === 0)
-    console.log(`[main] audio-pcm #${_audioFrameCount} samples=${f32.length} peak=${Math.max(...f32).toFixed(4)}`)
+  if (++_audioFrameCount <= 5 || _audioFrameCount % 500 === 0)
+    console.log(`[main] audio-pcm #${_audioFrameCount} samples=${f32.length}`)
   pushAudioFrame(f32)
   if (swarmMod && SWARM_ROLE === 'host') swarmMod.sendAudio(f32)
 })
 
 async function startP2P() {
   if (!SWARM_TOPIC) return
-  swarmMod = await import('./p2p/swarm.js')
-  hostMod = await import('./p2p/host.js')
+  ;[swarmMod, hostMod] = await Promise.all([import('./p2p/swarm.js'), import('./p2p/host.js')])
   const cdp = await import('./p2p/cdp-proxy.js')
   await swarmMod.startSwarm(SWARM_TOPIC, SWARM_ROLE, {
     onAudio: (f32) => { if (SWARM_ROLE === 'client') pushAudioFrame(f32) },
@@ -118,20 +109,34 @@ async function startP2P() {
     onCdpUp: (buf, conn) => cdp.onSwarmCdpUp(buf, conn),
     onCdpDown: (buf) => cdp.onSwarmCdpDown(buf),
     onInput: (evt) => { if (SWARM_ROLE === 'host' && mw()) try { mainWindow.webContents.sendInputEvent(evt) } catch {} },
-    onConnect: (conn) => { console.log('[p2p] peer connected'); if (SWARM_ROLE === 'host') cdp.onPeerConnect(conn) },
-    onDisconnect: (conn) => { console.log('[p2p] peer disconnected'); if (SWARM_ROLE === 'host') cdp.onPeerDisconnect(conn) },
+    onConnect: (conn) => { console.log('[p2p] +peer'); if (SWARM_ROLE === 'host') cdp.onPeerConnect(conn) },
+    onDisconnect: (conn) => { console.log('[p2p] -peer'); if (SWARM_ROLE === 'host') cdp.onPeerDisconnect(conn) },
   })
   cdp.startCdpProxy(SWARM_ROLE, parseInt(CDP_PORT, 10), CDP_PROXY_PORT)
   console.log(`[p2p] started as ${SWARM_ROLE}`)
 }
 
 function startWsServer() {
+  const MSG_AUDIO = 1
   const wss = new WebSocketServer({ port: WS_AUDIO_PORT, host: '127.0.0.1' })
   wss.on('connection', (ws) => {
+    let recvBuf = Buffer.alloc(0)
     ws.on('message', (data, isBinary) => {
       if (!isBinary) return
-      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
-      pushAudioFrame(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4))
+      const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data)
+      recvBuf = Buffer.concat([recvBuf, chunk])
+      while (recvBuf.length >= 8) {
+        const type = recvBuf.readUInt32LE(0)
+        const len = recvBuf.readUInt32LE(4)
+        if (recvBuf.length < 8 + len) break
+        const payload = recvBuf.slice(8, 8 + len)
+        recvBuf = recvBuf.slice(8 + len)
+        if (type === MSG_AUDIO) {
+          const f32 = new Float32Array(payload.buffer, payload.byteOffset, payload.byteLength / 4)
+          pushAudioFrame(f32)
+          if (swarmMod && SWARM_ROLE === 'host') swarmMod.sendAudio(f32)
+        }
+      }
     })
     ws.on('error', () => {})
   })
@@ -141,16 +146,14 @@ function startWsServer() {
 
 async function startBot() {
   const { DISCORD_BOT_TOKEN: tok, GUILD_ID: gid, CHANNEL_ID: cid } = process.env
-  if (!tok || !gid || !cid) { console.warn('[bot] BOT_TOKEN, GUILD_ID, or CHANNEL_ID not set — bot disabled'); return }
+  if (!tok || !gid || !cid) { console.warn('[bot] missing token/guild/channel — disabled'); return }
   botClient = createClient()
   let _connecting = false
   const connectVoice = async () => {
-    if (_connecting) return
-    _connecting = true
+    if (_connecting) return; _connecting = true
     try {
       const { voiceConnection } = await joinDiscordVoice(botClient, gid, cid)
-      console.log('[bot] Joined voice channel')
-      initVoicePlayer(voiceConnection)
+      initVoicePlayer(voiceConnection); console.log('[bot] joined voice')
       voiceConnection.once('stateChange', (o, n) => {
         if (n.status === 'destroyed') { _connecting = false; setTimeout(connectVoice, 15000) }
       })
@@ -165,9 +168,8 @@ async function startBot() {
 }
 
 function startVdoNinja() {
-  if (!VDO_ROOM) return
-  if (!/^[a-zA-Z0-9_-]{1,40}$/.test(VDO_ROOM)) { console.error('[vdo] invalid VDO_NINJA_ROOM:', VDO_ROOM); return }
-  if (!/^[a-zA-Z0-9]{1,20}$/.test(VDO_ID)) { console.error('[vdo] invalid VDO_NINJA_STREAM_ID:', VDO_ID); return }
+  if (!VDO_ROOM || !/^[a-zA-Z0-9_-]{1,40}$/.test(VDO_ROOM)) { if (VDO_ROOM) console.error('[vdo] invalid room:', VDO_ROOM); return }
+  if (!/^[a-zA-Z0-9]{1,20}$/.test(VDO_ID)) { console.error('[vdo] invalid stream id:', VDO_ID); return }
   const s = session.fromPartition('persist:vdo')
   s.setPermissionRequestHandler((_, __, cb) => cb(true)); s.setPermissionCheckHandler(() => true)
   const w = new BrowserWindow({ show: false, webPreferences: {

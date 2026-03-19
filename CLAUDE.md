@@ -44,7 +44,7 @@ Uses `discord.js` v14 with `GatewayIntentBits.Guilds` and `GatewayIntentBits.Gui
 The preload patches `window.AudioContext` to auto-resume all page-created contexts. A dedicated capture `AudioContext` is created with an `AudioWorkletNode` (`capture-processor` loaded from `capture-worklet.js`). `AudioNode.prototype.connect` is patched so anything connecting to `AudioDestinationNode` also feeds the worklet. `<audio>`/`<video>` elements are tapped via `createMediaElementSource`. The worklet emits 960-sample frames (one Opus frame) via `port.onmessage` → `ipcRenderer.send('audio-pcm')`.
 
 ### PCM pipeline uses AudioWorklet
-`AudioWorkletNode` with `capture-processor` (in `src/electron/capture-worklet.js`) handles PCM collection at exactly 960 samples/frame. The worklet runs in the audio rendering thread, avoiding the main-thread overhead of `ScriptProcessorNode`.
+`AudioWorkletNode` with `capture-processor` (in `src/electron/capture-worklet.js`) accumulates 128-sample render quanta into 960-sample stereo frames before posting via `port.postMessage`. The worklet runs in the audio rendering thread, avoiding the main-thread overhead of `ScriptProcessorNode`.
 
 ### preload.js must be .cjs
 With `"type": "module"` in package.json, Electron preload scripts must use `.cjs` extension. The main process uses ESM.
@@ -92,7 +92,7 @@ The main session (`persist:main`) intercepts all outgoing requests via `webReque
 The preload patches `window.AudioContext` to intercept all page-created contexts. Each context gets a `MediaStreamDestination` tap; `AudioNode.prototype.connect` is patched to mirror connections to destination into the tap. `<audio>`/`<video>` elements are captured via `createMediaElementSource`. A periodic scan every 2s catches elements added after the MutationObserver fires. `display-capture` permission is granted in `setPermissionRequestHandler` but is no longer required for this approach.
 
 ### WS audio server also runs in Electron host
-`main.js` starts a WebSocketServer on `WS_AUDIO_PORT` (default 9888) that accepts raw Float32 binary frames from any local client (same format as the extension sends to companion). This allows the companion to be skipped when only Discord audio bridging is needed.
+`main.js` starts a WebSocketServer on `WS_AUDIO_PORT` (default 9888) that accepts framed binary messages using the same 4+4+N protocol as the extension and companion (type LE uint32, length LE uint32, payload). AUDIO frames (type=1) are decoded as Float32 and pushed to the voice pipeline. This allows the extension to connect directly to the Electron host without the companion.
 
 ### host.js uses WINDOW_TITLE to find the window for screen capture
 `src/p2p/host.js` calls `desktopCapturer.getSources` every 100ms and matches by `name === 'Discord Voice Bridge'` (the hardcoded `WINDOW_TITLE` constant shared with `main.js`). If the window title changes or no window matches, it falls back to `sources[0]`.

@@ -110,4 +110,4 @@ function sendCdpDown(buf, conn) {
   for (const p of peers.values()) _sendTo(p.conn, MSG.CDP_DOWN, buf)
 }
 
-export { startSwarm, destroySwarm, sendAudio, sendFrame, sendInput, sendCdpUp, sendCdpDown }
+export { MSG, _encode as encode, startSwarm, destroySwarm, sendAudio, sendFrame, sendInput, sendCdpUp, sendCdpDown }

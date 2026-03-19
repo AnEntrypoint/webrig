@@ -4,23 +4,14 @@ dotenv.config()
 import Hyperswarm from 'hyperswarm'
 import { createHash } from 'node:crypto'
 import { WebSocketServer, WebSocket } from 'ws'
+import { MSG, encode } from './swarm.js'
 
 const SWARM_TOPIC = process.env.SWARM_TOPIC || ''
 const CDP_PROXY_PORT = parseInt(process.env.CDP_PROXY_PORT || '9230', 10)
-const MSG = { CDP_UP: 3, CDP_DOWN: 4 }
 
 if (!SWARM_TOPIC) {
   console.error('Usage: SWARM_TOPIC=<topic> CDP_PROXY_PORT=<port> node src/p2p/client.js')
   process.exit(1)
-}
-
-function encode(type, payload) {
-  const buf = Buffer.isBuffer(payload) ? payload : Buffer.from(payload)
-  const out = Buffer.allocUnsafe(8 + buf.length)
-  out.writeUInt32LE(type, 0)
-  out.writeUInt32LE(buf.length, 4)
-  buf.copy(out, 8)
-  return out
 }
 
 const topic = createHash('sha256').update(SWARM_TOPIC).digest()

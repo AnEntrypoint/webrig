@@ -59,13 +59,20 @@ function pushAudioFrame(f32Buffer) {
     const clamped = Math.max(-1, Math.min(1, f32[i]))
     s16[i] = clamped < 0 ? clamped * 32768 : clamped * 32767
   }
-  _accumBuf = Buffer.concat([_accumBuf, Buffer.from(s16.buffer)])
+  const s16Buf = Buffer.from(s16.buffer, s16.byteOffset, s16.byteLength)
+  if (_accumBuf.length === 0 && s16Buf.length >= FRAME) {
+    let off = 0
+    while (off + FRAME <= s16Buf.length) { pcmInput.write(s16Buf.subarray(off, off + FRAME)); off += FRAME; _pushCount++ }
+    if (off < s16Buf.length) _accumBuf = Buffer.from(s16Buf.subarray(off))
+  } else {
+    _accumBuf = Buffer.concat([_accumBuf, s16Buf])
+  }
   while (_accumBuf.length >= FRAME) {
-    pcmInput.write(_accumBuf.slice(0, FRAME))
-    _accumBuf = _accumBuf.slice(FRAME)
+    pcmInput.write(_accumBuf.subarray(0, FRAME))
+    _accumBuf = _accumBuf.subarray(FRAME)
     _pushCount++
     if (_pushCount <= 5 || _pushCount % 500 === 0) {
-      const peak = Math.max(...Array.from(f32).map(Math.abs))
+      let peak = 0; for (let i = 0; i < f32.length; i++) { const v = Math.abs(f32[i]); if (v > peak) peak = v }
       console.log(`[voice] push #${_pushCount}, bytes=${FRAME}, peak=${peak.toFixed(4)}, player=${audioPlayer?.state?.status}`)
     }
   }
