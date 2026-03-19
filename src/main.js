@@ -19,11 +19,9 @@ const WINDOW_TITLE = 'Discord Voice Bridge'
 const VDO_ROOM = process.env.VDO_NINJA_ROOM || ''
 const VDO_ID = process.env.VDO_NINJA_STREAM_ID || Math.random().toString(36).slice(2, 8)
 
-app.commandLine.appendSwitch('remote-debugging-port', CDP_PORT)
-app.commandLine.appendSwitch('remote-debugging-address', '127.0.0.1')
-app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled')
-app.commandLine.appendSwitch('disable-features', 'MediaRouter')
-app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+for (const [k, v] of [['remote-debugging-port', CDP_PORT], ['remote-debugging-address', '127.0.0.1'],
+  ['disable-blink-features', 'AutomationControlled'], ['disable-features', 'MediaRouter'],
+  ['autoplay-policy', 'no-user-gesture-required']]) app.commandLine.appendSwitch(k, v)
 
 let mainWindow = null, botClient = null, swarmMod = null, hostMod = null
 for (const e of ['unhandledRejection', 'uncaughtException']) process.on(e, (err) => console.error(`[${e}]`, err))
@@ -100,9 +98,8 @@ let _audioFrameCount = 0
 ipcMain.on('audio-pcm', (_, arrayBuffer) => {
   const buf = Buffer.isBuffer(arrayBuffer) ? arrayBuffer : Buffer.from(arrayBuffer)
   const f32 = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4)
-  _audioFrameCount++
-  if (_audioFrameCount <= 5 || _audioFrameCount % 500 === 0)
-    console.log(`[main] audio-pcm #${_audioFrameCount} samples=${f32.length} peak=${Math.max(...f32).toFixed(4)}`)
+  if (++_audioFrameCount <= 5 || _audioFrameCount % 500 === 0)
+    console.log(`[main] audio-pcm #${_audioFrameCount} samples=${f32.length}`)
   pushAudioFrame(f32)
   if (swarmMod && SWARM_ROLE === 'host') swarmMod.sendAudio(f32)
 })
@@ -126,12 +123,26 @@ async function startP2P() {
 }
 
 function startWsServer() {
+  const MSG_AUDIO = 1
   const wss = new WebSocketServer({ port: WS_AUDIO_PORT, host: '127.0.0.1' })
   wss.on('connection', (ws) => {
+    let recvBuf = Buffer.alloc(0)
     ws.on('message', (data, isBinary) => {
       if (!isBinary) return
-      const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
-      pushAudioFrame(new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4))
+      const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data)
+      recvBuf = Buffer.concat([recvBuf, chunk])
+      while (recvBuf.length >= 8) {
+        const type = recvBuf.readUInt32LE(0)
+        const len = recvBuf.readUInt32LE(4)
+        if (recvBuf.length < 8 + len) break
+        const payload = recvBuf.slice(8, 8 + len)
+        recvBuf = recvBuf.slice(8 + len)
+        if (type === MSG_AUDIO) {
+          const f32 = new Float32Array(payload.buffer, payload.byteOffset, payload.byteLength / 4)
+          pushAudioFrame(f32)
+          if (swarmMod && SWARM_ROLE === 'host') swarmMod.sendAudio(f32)
+        }
+      }
     })
     ws.on('error', () => {})
   })

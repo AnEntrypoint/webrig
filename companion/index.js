@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import { WebSocketServer, WebSocket } from 'ws'
 import { createClient, joinDiscordVoice, subscribeToSpeaker } from '../src/bot/client.js'
 import { initVoicePlayer, pushAudioFrame } from '../src/bot/voice.js'
-import { startSwarm, sendFrame, sendInput, sendAudio } from '../src/p2p/swarm.js'
+import { MSG, encode, startSwarm, sendFrame, sendInput, sendAudio } from '../src/p2p/swarm.js'
 
 const WS_AUDIO_PORT = parseInt(process.env.WS_AUDIO_PORT ?? '9888')
 const CDP_PROXY_PORT = parseInt(process.env.CDP_PROXY_PORT ?? '9231')
@@ -12,17 +12,6 @@ const SWARM_TOPIC = process.env.SWARM_TOPIC
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN
 const GUILD_ID = process.env.GUILD_ID
 const CHANNEL_ID = process.env.CHANNEL_ID
-
-const MSG = { AUDIO: 1, FRAME: 2, CDP_UP: 3, CDP_DOWN: 4, INPUT: 5 }
-
-function encode(type, payload) {
-  const buf = Buffer.isBuffer(payload) ? payload : Buffer.from(payload)
-  const out = Buffer.allocUnsafe(8 + buf.length)
-  out.writeUInt32LE(type, 0)
-  out.writeUInt32LE(buf.length, 4)
-  buf.copy(out, 8)
-  return out
-}
 
 let extensionWs = null
 let extensionCdpWs = null

@@ -80,40 +80,35 @@ function relXY(e) {
 
 overlay.addEventListener('mousemove', (e) => {
   const { x, y } = relXY(e)
-  send({ type: 'mouseEvent', x, y, button: 'none', buttons: 0, clickCount: 0, deltaX: 0, deltaY: 0, modifiers: MOD(e), pointerType: 'mouse' })
+  send({ dispatchType: 'mouseEvent', type: 'mouseMoved', x, y, button: 'none', buttons: 0, clickCount: 0, deltaX: 0, deltaY: 0, modifiers: MOD(e), pointerType: 'mouse' })
 })
 
 overlay.addEventListener('mousedown', (e) => {
   const { x, y } = relXY(e)
-  send({ type: 'mouseEvent', x, y, button: BUTTONS[e.button] || 'left', buttons: e.buttons, clickCount: 1, deltaX: 0, deltaY: 0, modifiers: MOD(e), pointerType: 'mouse' })
+  send({ dispatchType: 'mouseEvent', type: 'mousePressed', x, y, button: BUTTONS[e.button] || 'left', buttons: e.buttons, clickCount: 1, deltaX: 0, deltaY: 0, modifiers: MOD(e), pointerType: 'mouse' })
 })
 
 overlay.addEventListener('mouseup', (e) => {
   const { x, y } = relXY(e)
-  send({ type: 'mouseEvent', x, y, button: BUTTONS[e.button] || 'left', buttons: e.buttons, clickCount: 0, deltaX: 0, deltaY: 0, modifiers: MOD(e), pointerType: 'mouse' })
-})
-
-overlay.addEventListener('click', (e) => {
-  const { x, y } = relXY(e)
-  send({ type: 'mouseEvent', x, y, button: BUTTONS[e.button] || 'left', buttons: 0, clickCount: 1, deltaX: 0, deltaY: 0, modifiers: MOD(e), pointerType: 'mouse' })
+  send({ dispatchType: 'mouseEvent', type: 'mouseReleased', x, y, button: BUTTONS[e.button] || 'left', buttons: e.buttons, clickCount: 0, deltaX: 0, deltaY: 0, modifiers: MOD(e), pointerType: 'mouse' })
 })
 
 overlay.addEventListener('wheel', (e) => {
   e.preventDefault()
   const { x, y } = relXY(e)
-  send({ type: 'mouseEvent', x, y, button: 'none', buttons: 0, clickCount: 0, deltaX: e.deltaX, deltaY: e.deltaY, modifiers: MOD(e), pointerType: 'mouse' })
+  send({ dispatchType: 'mouseEvent', type: 'mouseWheel', x, y, button: 'none', buttons: 0, clickCount: 0, deltaX: e.deltaX, deltaY: e.deltaY, modifiers: MOD(e), pointerType: 'mouse' })
 }, { passive: false })
 
 overlay.addEventListener('contextmenu', (e) => e.preventDefault())
 
 overlay.addEventListener('keydown', (e) => {
   e.preventDefault()
-  send({ type: 'keyEvent', type: 'keyDown', key: e.key, code: e.code, modifiers: MOD(e), windowsVirtualKeyCode: e.keyCode, nativeVirtualKeyCode: e.keyCode })
+  send({ dispatchType: 'keyEvent', type: 'keyDown', key: e.key, code: e.code, modifiers: MOD(e), windowsVirtualKeyCode: e.keyCode, nativeVirtualKeyCode: e.keyCode })
 })
 
 overlay.addEventListener('keyup', (e) => {
   e.preventDefault()
-  send({ type: 'keyEvent', type: 'keyUp', key: e.key, code: e.code, modifiers: MOD(e), windowsVirtualKeyCode: e.keyCode, nativeVirtualKeyCode: e.keyCode })
+  send({ dispatchType: 'keyEvent', type: 'keyUp', key: e.key, code: e.code, modifiers: MOD(e), windowsVirtualKeyCode: e.keyCode, nativeVirtualKeyCode: e.keyCode })
 })
 </script>
 </body>

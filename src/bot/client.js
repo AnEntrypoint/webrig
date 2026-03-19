@@ -83,10 +83,9 @@ async function joinDiscordVoice(client, guildId, channelId) {
   // Send voice leave via gateway to clear any stale session on Discord's side
   console.log('[client] sending voice leave to clear stale session...')
   try {
-    client.ws.broadcast({
-      op: 4,
-      d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false },
-    })
+    for (const shard of client.ws.shards.values()) {
+      shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
+    }
   } catch (e) {
     console.log('[client] leave send error (non-fatal):', e.message)
   }
@@ -114,8 +113,7 @@ async function joinDiscordVoice(client, guildId, channelId) {
       voiceReceiver = voiceConnection.receiver
 
       voiceConnection.on(VoiceConnectionStatus.Disconnected, () => {
-        console.log('[client] voice disconnected')
-        try { voiceConnection.destroy() } catch {}
+        console.log('[client] voice disconnected, voice.js will attempt rejoin')
       })
 
       return { voiceConnection, voiceReceiver }
