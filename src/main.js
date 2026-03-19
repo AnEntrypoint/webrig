@@ -31,8 +31,7 @@ const CHROME_VERSION = '134'
 function createWindow() {
   session.defaultSession.setUserAgent(CHROME_UA)
   const mainSession = session.fromPartition('persist:main')
-  mainSession.setPermissionRequestHandler((_, __, cb) => cb(true))
-  mainSession.setPermissionCheckHandler(() => true)
+  mainSession.setPermissionRequestHandler((_, __, cb) => cb(true)); mainSession.setPermissionCheckHandler(() => true)
   mainSession.webRequest.onHeadersReceived((details, cb) => {
     const h = details.responseHeaders
     if (!h) { cb({}); return }
@@ -48,10 +47,7 @@ function createWindow() {
     h['Accept-Language'] = 'en-US,en;q=0.9'
     if (!h['Accept']) h['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
     if (!h['Accept-Encoding']) h['Accept-Encoding'] = 'gzip, deflate, br, zstd'
-    if (!h['Sec-Fetch-Site']) h['Sec-Fetch-Site'] = 'none'
-    if (!h['Sec-Fetch-Mode']) h['Sec-Fetch-Mode'] = 'navigate'
-    if (!h['Sec-Fetch-Dest']) h['Sec-Fetch-Dest'] = 'document'
-    if (!h['Sec-Fetch-User']) h['Sec-Fetch-User'] = '?1'
+    for (const [k, v] of [['Sec-Fetch-Site','none'],['Sec-Fetch-Mode','navigate'],['Sec-Fetch-Dest','document'],['Sec-Fetch-User','?1']]) if (!h[k]) h[k] = v
     if (details.resourceType === 'mainFrame') { h['Upgrade-Insecure-Requests'] = '1'; h['Priority'] = 'u=0, i' }
     delete h['X-Powered-By']; cb({ requestHeaders: h })
   })
