@@ -89,10 +89,9 @@ function createWindow() {
 }
 
 const mw = () => mainWindow && !mainWindow.isDestroyed()
-ipcMain.on('log', (_, msg) => console.log('[renderer]', msg))
-ipcMain.on('nav-back', () => { if (mw()) mainWindow.webContents.goBack() })
-ipcMain.on('nav-forward', () => { if (mw()) mainWindow.webContents.goForward() })
-ipcMain.on('nav-go', (_, url) => { if (mw()) mainWindow.webContents.loadURL(url).catch((e) => console.error('[nav-go]', e.message)) })
+for (const [ch, fn] of [['log', (_, m) => console.log('[renderer]', m)], ['nav-back', () => { if (mw()) mainWindow.webContents.goBack() }],
+  ['nav-forward', () => { if (mw()) mainWindow.webContents.goForward() }],
+  ['nav-go', (_, u) => { if (mw()) mainWindow.webContents.loadURL(u).catch(e => console.error('[nav]', e.message)) }]]) ipcMain.on(ch, fn)
 
 let _audioFrameCount = 0
 ipcMain.on('audio-pcm', (_, arrayBuffer) => {
@@ -106,8 +105,7 @@ ipcMain.on('audio-pcm', (_, arrayBuffer) => {
 
 async function startP2P() {
   if (!SWARM_TOPIC) return
-  swarmMod = await import('./p2p/swarm.js')
-  hostMod = await import('./p2p/host.js')
+  ;[swarmMod, hostMod] = await Promise.all([import('./p2p/swarm.js'), import('./p2p/host.js')])
   const cdp = await import('./p2p/cdp-proxy.js')
   await swarmMod.startSwarm(SWARM_TOPIC, SWARM_ROLE, {
     onAudio: (f32) => { if (SWARM_ROLE === 'client') pushAudioFrame(f32) },
@@ -115,8 +113,8 @@ async function startP2P() {
     onCdpUp: (buf, conn) => cdp.onSwarmCdpUp(buf, conn),
     onCdpDown: (buf) => cdp.onSwarmCdpDown(buf),
     onInput: (evt) => { if (SWARM_ROLE === 'host' && mw()) try { mainWindow.webContents.sendInputEvent(evt) } catch {} },
-    onConnect: (conn) => { console.log('[p2p] peer connected'); if (SWARM_ROLE === 'host') cdp.onPeerConnect(conn) },
-    onDisconnect: (conn) => { console.log('[p2p] peer disconnected'); if (SWARM_ROLE === 'host') cdp.onPeerDisconnect(conn) },
+    onConnect: (conn) => { console.log('[p2p] +peer'); if (SWARM_ROLE === 'host') cdp.onPeerConnect(conn) },
+    onDisconnect: (conn) => { console.log('[p2p] -peer'); if (SWARM_ROLE === 'host') cdp.onPeerDisconnect(conn) },
   })
   cdp.startCdpProxy(SWARM_ROLE, parseInt(CDP_PORT, 10), CDP_PROXY_PORT)
   console.log(`[p2p] started as ${SWARM_ROLE}`)
@@ -176,9 +174,8 @@ async function startBot() {
 }
 
 function startVdoNinja() {
-  if (!VDO_ROOM) return
-  if (!/^[a-zA-Z0-9_-]{1,40}$/.test(VDO_ROOM)) { console.error('[vdo] invalid VDO_NINJA_ROOM:', VDO_ROOM); return }
-  if (!/^[a-zA-Z0-9]{1,20}$/.test(VDO_ID)) { console.error('[vdo] invalid VDO_NINJA_STREAM_ID:', VDO_ID); return }
+  if (!VDO_ROOM || !/^[a-zA-Z0-9_-]{1,40}$/.test(VDO_ROOM)) { if (VDO_ROOM) console.error('[vdo] invalid room:', VDO_ROOM); return }
+  if (!/^[a-zA-Z0-9]{1,20}$/.test(VDO_ID)) { console.error('[vdo] invalid stream id:', VDO_ID); return }
   const s = session.fromPartition('persist:vdo')
   s.setPermissionRequestHandler((_, __, cb) => cb(true)); s.setPermissionCheckHandler(() => true)
   const w = new BrowserWindow({ show: false, webPreferences: {
