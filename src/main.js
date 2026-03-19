@@ -150,16 +150,14 @@ function startWsServer() {
 
 async function startBot() {
   const { DISCORD_BOT_TOKEN: tok, GUILD_ID: gid, CHANNEL_ID: cid } = process.env
-  if (!tok || !gid || !cid) { console.warn('[bot] BOT_TOKEN, GUILD_ID, or CHANNEL_ID not set — bot disabled'); return }
+  if (!tok || !gid || !cid) { console.warn('[bot] missing token/guild/channel — disabled'); return }
   botClient = createClient()
   let _connecting = false
   const connectVoice = async () => {
-    if (_connecting) return
-    _connecting = true
+    if (_connecting) return; _connecting = true
     try {
       const { voiceConnection } = await joinDiscordVoice(botClient, gid, cid)
-      console.log('[bot] Joined voice channel')
-      initVoicePlayer(voiceConnection)
+      initVoicePlayer(voiceConnection); console.log('[bot] joined voice')
       voiceConnection.once('stateChange', (o, n) => {
         if (n.status === 'destroyed') { _connecting = false; setTimeout(connectVoice, 15000) }
       })
