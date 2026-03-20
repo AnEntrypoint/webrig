@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Webrig Audio Bridge",
+  "version": "1.0.0",
+  "description": "Tab audio/video relay to Webrig via WebSocket",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "webrig@webrig.local",
+      "strict_min_version": "109.0"
+    }
+  },
+  "permissions": [
+    "tabCapture",
+    "storage",
+    "activeTab"
+  ],
+  "background": {
+    "scripts": [
+      "background.js"
+    ],
+    "persistent": true
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Webrig Audio Bridge"
+  }
+}
