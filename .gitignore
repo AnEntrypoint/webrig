@@ -7,3 +7,6 @@ logs.txt
 dist/
 .prd
 companion-pm2.json
+
+electron.log
+electron_start.log

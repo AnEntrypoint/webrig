@@ -127,7 +127,7 @@ No custom HTTP server is needed — Electron's built-in CDP server is the interf
 
 ## Browser Extension Host Mode
 
-The `extension/` directory contains a Chrome extension that can replace the Electron window entirely. It provides the same capabilities (audio relay, screen relay, CDP passthrough, input forwarding) using only a Chrome browser and the extension.
+The `addon-chrome/` directory contains a Chrome extension that can replace the Electron window entirely. It provides the same capabilities (audio relay, screen relay, CDP passthrough, input forwarding) using only a Chrome browser and the extension.
 
 ### Framing Protocol
 
@@ -145,10 +145,10 @@ Input payload: JSON string of a CDP Input event (`{ type, ...fields }`).
 
 ### Extension Files
 
-- `extension/offscreen.js` — Runs in the offscreen document. Captures tab audio and video via `getUserMedia` with `chromeMediaSource: tab`. Tries audio+video first; falls back to audio-only if the tab has no video track. Sends AUDIO (type=1) Float32 frames via ScriptProcessorNode and FRAME (type=2) webm chunks via MediaRecorder (AV1→H264→webm fallback, 100ms timeslice) to `ws://127.0.0.1:9888`.
-- `extension/background.js` — Service worker. Gets `tabCapture` stream ID, attaches `chrome.debugger` to the tab, opens a second WebSocket to `ws://127.0.0.1:9231` for CDP bidirectional bridging (plain JSON, not framed), and dispatches INPUT (type=5) messages from the main WS as `chrome.debugger` Input events. INPUT dispatch uses `chrome.debugger.sendCommand` with `Input.dispatchMouseEvent` or `Input.dispatchKeyEvent` depending on the `evt.type` field.
-- `extension/popup.js` / `extension/popup.html` — UI with two URL inputs (audio/video WS and CDP WS) and status indicators for both connections.
-- `extension/manifest.json` — MV3, requires `tabCapture`, `offscreen`, `storage`, `activeTab`, `debugger` permissions.
+- `addon-chrome/offscreen.js` — Runs in the offscreen document. Captures tab audio and video via `getUserMedia` with `chromeMediaSource: tab`. Tries audio+video first; falls back to audio-only if the tab has no video track. Sends AUDIO (type=1) Float32 frames via ScriptProcessorNode and FRAME (type=2) webm chunks via MediaRecorder (AV1→H264→webm fallback, 100ms timeslice) to `ws://127.0.0.1:9888`.
+- `addon-chrome/background.js` — Service worker. Gets `tabCapture` stream ID, attaches `chrome.debugger` to the tab, opens a second WebSocket to `ws://127.0.0.1:9231` for CDP bidirectional bridging (plain JSON, not framed), and dispatches INPUT (type=5) messages from the main WS as `chrome.debugger` Input events. INPUT dispatch uses `chrome.debugger.sendCommand` with `Input.dispatchMouseEvent` or `Input.dispatchKeyEvent` depending on the `evt.type` field.
+- `addon-chrome/popup.js` / `addon-chrome/popup.html` — UI with two URL inputs (audio/video WS and CDP WS) and status indicators for both connections.
+- `addon-chrome/manifest.json` — MV3, requires `tabCapture`, `offscreen`, `storage`, `activeTab`, `debugger` permissions.
 
 ### Ports
 
@@ -161,7 +161,7 @@ The Electron host captures audio via Web Audio API tap in the preload. The exten
 
 ## Firefox Extension Host Mode
 
-The `firefox/` directory contains a Firefox extension that provides the same capabilities as the Chrome extension (audio relay, video relay, CDP passthrough, input forwarding) using Manifest V2 and Firefox WebExtension APIs.
+The `addon-firefox/` directory contains a Firefox extension that provides the same capabilities as the Chrome extension (audio relay, video relay, CDP passthrough, input forwarding) using Manifest V2 and Firefox WebExtension APIs.
 
 ### Key Differences from the Chrome Extension
 
@@ -179,9 +179,9 @@ The `firefox/` directory contains a Firefox extension that provides the same cap
 
 ### Firefox Extension Files
 
-- `firefox/background.js` — Persistent background page. Captures tab audio+video via `api.tabCapture.capture()`, processes audio with `ScriptProcessorNode`, encodes video with `MediaRecorder` (AV1→H264→webm, 100ms timeslice), sends framed binary to `ws://127.0.0.1:9888`, bridges CDP commands/events to `ws://127.0.0.1:9231`, dispatches INPUT (type=5) frames via `api.debugger.sendCommand`.
-- `firefox/popup.js` / `firefox/popup.html` — UI with two URL inputs (audio/video WS and CDP WS) and status indicators. Identical UX to the Chrome extension popup.
-- `firefox/manifest.json` — MV2, `persistent: true` background, requires `tabCapture`, `storage`, `activeTab`, `debugger`, `tabs`, `<all_urls>` permissions.
+- `addon-firefox/background.js` — Persistent background page. Captures tab audio+video via `api.tabCapture.capture()`, processes audio with `ScriptProcessorNode`, encodes video with `MediaRecorder` (AV1→H264→webm, 100ms timeslice), sends framed binary to `ws://127.0.0.1:9888`, bridges CDP commands/events to `ws://127.0.0.1:9231`, dispatches INPUT (type=5) frames via `api.debugger.sendCommand`.
+- `addon-firefox/popup.js` / `addon-firefox/popup.html` — UI with two URL inputs (audio/video WS and CDP WS) and status indicators. Identical UX to the Chrome extension popup.
+- `addon-firefox/manifest.json` — MV2, `persistent: true` background, requires `tabCapture`, `storage`, `activeTab`, `debugger`, `tabs`, `<all_urls>` permissions.
 
 ### Ports
 
@@ -306,9 +306,13 @@ GitHub Pages compatible. Load with `?room=ROOM&stream=STREAMID&ws=ws://...`.
 - `src/electron/vdo-bridge.cjs` — VDO.Ninja hidden window preload: MediaSource webm + AudioContext → getUserMedia override
 - `src/electron/remote-view.html` — Legacy SWARM_ROLE=client viewer: renders base64 JPEG screen frames received via `screen-frame` IPC
 - `src/electron/error.html` — Fallback page if TARGET_URL fails
-- `firefox/background.js` — Firefox MV2 persistent background: tabCapture → ScriptProcessorNode audio + MediaRecorder video → framed WS; debugger CDP bridge + INPUT dispatch
-- `firefox/popup.js` / `firefox/popup.html` — Firefox extension popup UI: WS/CDP URL inputs, start/stop, status display
-- `firefox/manifest.json` — Firefox MV2 manifest: persistent background, tabCapture/debugger/tabs permissions
+- `addon-chrome/background.js` — Chrome MV3 service worker: tabCapture stream ID → offscreen, debugger CDP bridge, INPUT dispatch
+- `addon-chrome/offscreen.js` — Offscreen document: getUserMedia audio+video → ScriptProcessorNode + MediaRecorder → framed WS
+- `addon-chrome/popup.js` / `addon-chrome/popup.html` — Chrome extension popup UI: WS/CDP URL inputs, start/stop, status display
+- `addon-chrome/manifest.json` — MV3, tabCapture/offscreen/storage/activeTab/debugger permissions
+- `addon-firefox/background.js` — Firefox MV2 persistent background: tabCapture → ScriptProcessorNode audio + MediaRecorder video → framed WS; debugger CDP bridge + INPUT dispatch
+- `addon-firefox/popup.js` / `addon-firefox/popup.html` — Firefox add-on popup UI: WS/CDP URL inputs, start/stop, status display
+- `addon-firefox/manifest.json` — MV2, persistent background, tabCapture/debugger/tabs permissions
 - `companion/index.js` — Standalone Node.js bridge: Discord voice, CDP server for agent-browser, Hyperswarm relay
 - `docs/viewer.html` — KVM viewer: VDO.Ninja iframe + input overlay + WS INPUT dispatch
 - `.env.example` — All configurable variables
