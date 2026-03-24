@@ -97,7 +97,7 @@ jobs:
 
       - name: Build Linux
         if: matrix.platform == 'linux'
-        run: npx electron-builder --linux ${{ matrix.arch == 'arm64' && '--arm64' || '' }} --publish=never
+        run: npx electron-builder --linux AppImage ${{ matrix.arch == 'arm64' && '--arm64' || '' }} --publish=never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
