@@ -121,10 +121,6 @@ jobs:
         with:
           path: all-artifacts
 
-      - uses: actions/checkout@v4
-        with:
-          ref: master
-
       - name: Collect release files
         run: |
           mkdir -p release-files
