@@ -37,6 +37,7 @@ jobs:
   build:
     needs: bump-version
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -54,7 +55,7 @@ jobs:
           - os: ubuntu-latest
             arch: x64
             platform: linux
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             arch: arm64
             platform: linux
     runs-on: ${{ matrix.os }}
