@@ -64,10 +64,6 @@
       "package.json",
       "!.env",
       "!**/*.md",
-      "!ecosystem.config.cjs",
-      "!agent-browser.json",
-      "!electron.log",
-      "!electron_start.log",
       "!logs.txt"
     ],
     "win": {

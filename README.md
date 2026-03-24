@@ -53,11 +53,12 @@ To get Guild ID and Channel ID: enable Developer Mode in Discord settings, then 
 npm start
 ```
 
-Or with PM2:
+## Browser Add-ons
 
-```
-pm2 start ecosystem.config.cjs
-```
+- `addon-chrome/` — Chrome MV3 extension: tab audio/video relay, CDP passthrough, input forwarding
+- `addon-firefox/` — Firefox MV2 add-on: same capabilities using persistent background page and `tabCapture.capture()`
+
+Load unpacked in Chrome (`chrome://extensions` → Load unpacked → select `addon-chrome/`) or Firefox (`about:debugging` → Load Temporary Add-on → select `addon-firefox/manifest.json`).
 
 ## CDP / Agent Browser Control
 

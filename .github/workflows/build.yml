@@ -134,8 +134,8 @@ jobs:
         run: |
           mkdir -p release-files
           find all-artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "*.zip" \) -exec cp {} release-files/ \;
-          cd firefox && zip -r ../release-files/webrig-firefox-extension.zip . && cd ..
-          cd extension && zip -r ../release-files/webrig-chrome-extension.zip . && cd ..
+          cd addon-firefox && zip -r ../release-files/webrig-firefox-addon.zip . && cd ..
+          cd addon-chrome && zip -r ../release-files/webrig-chrome-addon.zip . && cd ..
           ls -lah release-files/
 
       - name: Create GitHub Release
