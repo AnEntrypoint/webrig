@@ -1,5 +1,6 @@
 import { GoogleGenAI } from 'https://esm.sh/@google/genai@1.46.0'
 import { boot, runCli as wcRunCli, wcStatus, onWcStatus, onCdpReady, mountCdpRelay, routeCdpReply } from './wc.js'
+import { renderBrowserPanel } from './browser.js'
 
 const SW_PATH = '../bridge-sw.js'
 const RPC_URL = 'ws://127.0.0.1:9377'
@@ -20,6 +21,7 @@ function appendLine(text, kind = 'raw') {
 }
 
 function clearOutput() { $('output').innerHTML = '' }
+function appendToTerminal(text, kind) { const o=$('terminal-output'); if(!o)return; const d=document.createElement('div'); d.className='line line-'+(kind||'raw'); d.textContent=stripAnsi(text); o.appendChild(d); o.scrollTop=o.scrollHeight }
 
 async function registerSW() {
   if (!navigator.serviceWorker) return
@@ -128,8 +130,9 @@ const companion = (() => {
 async function runCli(agent, prompt) {
   appendLine('you: ' + prompt, 'user')
   if (wcStatus() === 'ready') {
-    appendLine('[running ' + agent + ' in WebContainer…]', 'info')
-    await wcRunCli(agent, prompt, evt => appendLine(evt.text, evt.type === 'err' ? 'err' : evt.type === 'info' ? 'info' : 'assistant'))
+    appendLine('[running ' + agent + ' — see Terminal tab]', 'info')
+    appendToTerminal('--- ' + agent + ' ---', 'info')
+    await wcRunCli(agent, prompt, evt => { appendToTerminal(evt.text, evt.type); if (evt.type !== 'raw') appendLine(evt.text, 'assistant') })
     return
   }
   if (companion.status !== 'connected') { appendLine('WebContainer unavailable and companion offline — run: npx webrig', 'err'); return }
@@ -149,7 +152,7 @@ async function runCli(agent, prompt) {
 }
 
 async function handleSubmit() {
-  const input = $('input')
+  const input = $('prompt-input')
   const prompt = input.value.trim(); if (!prompt) return
   input.value = ''; clearOutput()
   try {
@@ -165,17 +168,14 @@ function init() {
   companion.connect()
   companion.onStatus(s => { const el = $('companion-status'); el.textContent = s; el.className = 'status-dot status-' + s })
   onWcStatus(s => { const el = $('wc-status'); if (el) { el.textContent = s; el.className = 'status-dot status-' + (s === 'ready' ? 'connected' : s === 'booting' ? 'connecting' : 'disconnected') } })
-  boot().then(() => {
-    mountCdpRelay().catch(() => {})
-    onCdpReady(url => {
-      appendLine('[cdp-relay ready at ' + url + ']', 'info')
-    })
-  })
+  boot().then(() => { mountCdpRelay().catch(()=>{}); onCdpReady(()=>appendLine('[cdp-relay ready]','info')) })
+  renderBrowserPanel($('browser-url'),$('browser-go'),$('browser-snap'),$('browser-frame'))
+  const extEl=$('ext-status'); if(typeof chrome!=='undefined'&&chrome.runtime?.id){extEl.textContent='ext ok';extEl.className='status-dot status-connected'}
   const keys = loadKeys()
   $('key-anthropic').value = keys.anthropicApiKey; $('key-openai').value = keys.openaiApiKey
   $('key-openrouter').value = keys.openrouterApiKey; $('key-gemini').value = keys.geminiApiKey
   $('save-keys').onclick = saveKeys
-  $('input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() } })
+  $('prompt-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit() } })
   $('send-btn').onclick = handleSubmit
   $('clear-btn').onclick = clearOutput
   document.querySelectorAll('.tab-btn').forEach(btn => {
