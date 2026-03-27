@@ -1,5 +1,5 @@
 import { GoogleGenAI } from 'https://esm.sh/@google/genai@1.46.0'
-import { boot, runCli as wcRunCli, wcStatus, onWcStatus } from './wc.js'
+import { boot, runCli as wcRunCli, wcStatus, onWcStatus, onCdpReady, mountCdpRelay, routeCdpReply } from './wc.js'
 
 const SW_PATH = '../bridge-sw.js'
 const RPC_URL = 'ws://127.0.0.1:9377'
@@ -78,6 +78,23 @@ async function runAnthropic(prompt) {
   }
 }
 
+
+function cdpCall(method, params) {
+  return new Promise((resolve, reject) => {
+    if (typeof chrome !== 'undefined' && chrome.runtime?.id) {
+      chrome.runtime.sendMessage({ type: 'CDP_CONTROL', method, params }, r => {
+        if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message))
+        resolve(r?.result ?? r)
+      })
+    } else if (companion.status === 'connected') {
+      companion.call('cdp', { method, params }).then(resolve).catch(reject)
+    } else {
+      reject(new Error('No CDP bridge available'))
+    }
+  })
+}
+window.__cdp = cdpCall
+
 const companion = (() => {
   let ws = null, id = 0, pending = new Map(), subs = new Map(), status = 'disconnected'
   const onStatus = new Set()
@@ -148,7 +165,12 @@ function init() {
   companion.connect()
   companion.onStatus(s => { const el = $('companion-status'); el.textContent = s; el.className = 'status-dot status-' + s })
   onWcStatus(s => { const el = $('wc-status'); if (el) { el.textContent = s; el.className = 'status-dot status-' + (s === 'ready' ? 'connected' : s === 'booting' ? 'connecting' : 'disconnected') } })
-  boot()
+  boot().then(() => {
+    mountCdpRelay().catch(() => {})
+    onCdpReady(url => {
+      appendLine('[cdp-relay ready at ' + url + ']', 'info')
+    })
+  })
   const keys = loadKeys()
   $('key-anthropic').value = keys.anthropicApiKey; $('key-openai').value = keys.openaiApiKey
   $('key-openrouter').value = keys.openrouterApiKey; $('key-gemini').value = keys.geminiApiKey

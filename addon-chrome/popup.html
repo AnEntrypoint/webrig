@@ -3,12 +3,16 @@
 <head>
 <meta charset="utf-8">
 <style>
-  body { font-family: sans-serif; width: 280px; padding: 12px; margin: 0; }
-  label { font-size: 12px; color: #333; }
-  input { width: 100%; box-sizing: border-box; margin: 4px 0 8px; padding: 4px 6px; }
-  button { width: 100%; padding: 6px; margin-top: 4px; cursor: pointer; }
-  .status { font-size: 12px; margin-top: 6px; color: #555; }
-  .status span { font-weight: bold; }
+body{font-family:sans-serif;width:320px;padding:12px;margin:0}
+label{font-size:12px;color:#333}
+input{width:100%;box-sizing:border-box;margin:4px 0 8px;padding:4px 6px}
+button{width:100%;padding:6px;margin-top:4px;cursor:pointer}
+.status{font-size:12px;margin-top:6px;color:#555}.status span{font-weight:bold}
+.tabs-list{margin-top:10px;border-top:1px solid #ddd;padding-top:8px;max-height:200px;overflow-y:auto}
+.tab-row{display:flex;align-items:center;gap:6px;padding:4px;cursor:pointer;border-radius:4px;font-size:12px}
+.tab-row:hover{background:#f0f0f0}.tab-row.active{background:#e0f0ff}
+.tab-row img{width:14px;height:14px}.tab-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.section-label{font-size:11px;color:#888;margin:6px 0 2px}
 </style>
 </head>
 <body>
@@ -19,6 +23,9 @@
 <button id="btn">Start</button>
 <div class="status">Audio: <span id="status">Idle</span></div>
 <div class="status">CDP: <span id="cdpStatus">Detached</span></div>
+<div class="section-label">CDP Target Tab</div>
+<div class="status">Target: <span id="targetTitle">none</span></div>
+<div class="tabs-list" id="tabsList"></div>
 <script src="popup.js"></script>
 </body>
 </html>

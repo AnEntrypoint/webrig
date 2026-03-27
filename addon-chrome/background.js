@@ -1,6 +1,7 @@
 let capturing = false
 let cdpAttached = false
 let activeTabId = null
+let targetTabId = null
 let cdpWs = null
 let cdpWsUrl = null
 let cdpReconnectTimer = null
@@ -116,6 +117,11 @@ function dispatchInput(tabId, payload) {
   })
 }
 
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (tabId === targetTabId) { targetTabId = null }
+  if (tabId === activeTabId) { cdpAttached = false; activeTabId = null }
+})
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'START') {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
@@ -137,6 +143,32 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return false
   }
 
+  if (msg.type === 'TABS_LIST') {
+    chrome.tabs.query({}, (tabs) => {
+      sendResponse(tabs.map(t => ({ id: t.id, title: t.title, url: t.url, favIconUrl: t.favIconUrl })))
+    })
+    return true
+  }
+  if (msg.type === 'SET_TARGET_TAB') {
+    const tid = msg.tabId
+    if (!tid) { sendResponse({ ok: false, error: 'tabId required' }); return false }
+    const prev = targetTabId
+    targetTabId = tid
+    if (cdpAttached && prev && prev !== tid) chrome.debugger.detach({ tabId: prev }, () => { cdpAttached = false })
+    attachDebugger(tid).then(() => sendResponse({ ok: true, tabId: tid })).catch(e => sendResponse({ ok: false, error: e.message }))
+    return true
+  }
+  if (msg.type === 'CDP_CONTROL') {
+    if (!targetTabId) { sendResponse({ ok: false, error: 'no target tab set' }); return false }
+    chrome.debugger.sendCommand({ tabId: targetTabId }, msg.method, msg.params || {}, (result) => {
+      sendResponse(chrome.runtime.lastError ? { ok: false, error: chrome.runtime.lastError.message } : { ok: true, result: result || {} })
+    })
+    return true
+  }
+  if (msg.type === 'GET_TARGET') {
+    sendResponse({ targetTabId })
+    return false
+  }
   if (msg.type === 'CDP_RPC' && activeTabId) {
     chrome.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}, (result) => {
       sendResponse(chrome.runtime.lastError ? { ok: false, error: chrome.runtime.lastError.message } : { ok: true, result: result || {} })
