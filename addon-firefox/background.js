@@ -1,3 +1,5 @@
+const hasDebugger = typeof api !== 'undefined' && !!api.debugger
+
 function connectCdpWs() {
   if (cdpReconnectTimer) { clearTimeout(cdpReconnectTimer); cdpReconnectTimer = null }
   cdpWs = new WebSocket(cdpWsUrl)
@@ -5,7 +7,7 @@ function connectCdpWs() {
   cdpWs.onmessage = (e) => {
     let msg
     try { msg = JSON.parse(e.data) } catch { return }
-    if (!activeTabId) return
+    if (!activeTabId || !hasDebugger) return
     if (msg.id !== undefined) {
       api.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}).then((result) => {
         if (cdpWs && cdpWs.readyState === WebSocket.OPEN) cdpWs.send(JSON.stringify({ id: msg.id, result: result || {} }))
@@ -32,17 +34,20 @@ function stopCdpWs() {
   if (cdpWs) { try { cdpWs.close() } catch {} cdpWs = null }
 }
 
-api.debugger.onEvent.addListener((_src, method, params) => {
-  if (cdpWs && cdpWs.readyState === WebSocket.OPEN) {
-    cdpWs.send(JSON.stringify({ method, params }))
-  }
-})
+if (hasDebugger) {
+  api.debugger.onEvent.addListener((_src, method, params) => {
+    if (cdpWs && cdpWs.readyState === WebSocket.OPEN) {
+      cdpWs.send(JSON.stringify({ method, params }))
+    }
+  })
 
-api.debugger.onDetach.addListener(() => {
-  cdpAttached = false
-})
+  api.debugger.onDetach.addListener(() => {
+    cdpAttached = false
+  })
+}
 
 function attachDebugger(tabId) {
+  if (!hasDebugger) return Promise.resolve()
   if (cdpAttached && activeTabId === tabId) return Promise.resolve()
   const detachFirst = cdpAttached
     ? api.debugger.detach({ tabId: activeTabId }).catch(() => {})
@@ -56,6 +61,7 @@ function attachDebugger(tabId) {
 }
 
 function dispatchInput(tabId, payload) {
+  if (!hasDebugger) return
   let evt
   try { evt = JSON.parse(new TextDecoder().decode(payload)) } catch { return }
   const dispatchType = evt.dispatchType || evt.type
@@ -99,7 +105,7 @@ function stopCapture() {
   capturing = false
   stopCapturePipeline()
   stopCdpWs()
-  const detach = cdpAttached && activeTabId
+  const detach = hasDebugger && cdpAttached && activeTabId
     ? api.debugger.detach({ tabId: activeTabId }).catch(() => {}).then(() => { cdpAttached = false })
     : Promise.resolve()
   return detach.then(() => { activeTabId = null })
@@ -121,8 +127,8 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     stopCapture().then(() => sendResponse({ ok: true })).catch((e) => sendResponse({ ok: false, error: e.message }))
     return true
   }
-
   if (msg.type === 'CDP_RPC' && activeTabId) {
+    if (!hasDebugger) { sendResponse({ ok: false, error: 'debugger API not available' }); return false }
     api.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}).then(result => {
       sendResponse({ ok: true, result: result || {} })
     }).catch(err => {
