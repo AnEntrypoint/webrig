@@ -57,7 +57,7 @@ const server = createServer((req, res) => {
   const mime = MIME[extname(filePath)] || 'text/plain'
   try {
     const data = readFileSync(filePath)
-    res.writeHead(200, { 'Content-Type': mime, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' })
+    res.writeHead(200, { 'Content-Type': mime, 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' })
     res.end(data)
   } catch { res.writeHead(404); res.end('not found') }
 })
