@@ -7,7 +7,7 @@ import { MSG, encode, startSwarm, sendFrame, sendInput, sendAudio } from '../src
 
 const WS_AUDIO_PORT = parseInt(process.env.WS_AUDIO_PORT ?? '9888')
 const CDP_PROXY_PORT = parseInt(process.env.CDP_PROXY_PORT ?? '9231')
-const CDP_BRIDGE_HTTP_PORT = parseInt(process.env.CDP_BRIDGE_HTTP_PORT ?? '9222')
+const CDP_BRIDGE_HTTP_PORT = parseInt(process.env.CDP_BRIDGE_HTTP_PORT ?? '9232')
 const SWARM_TOPIC = process.env.SWARM_TOPIC
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN
 const GUILD_ID = process.env.GUILD_ID
