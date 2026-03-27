@@ -13,13 +13,23 @@
     "./cdp-client": "./cdp-client.js",
     "./agent": "./agent.js",
     "./bridge": "./companion/bridge.js",
-    "./cdp-client-inpage": "./cdp-client-inpage.js"
+    "./cdp-client-inpage": "./cdp-client-inpage.js",
+    "./bridge-sw": "./bridge-sw.js"
   },
   "files": [
     "src/bot",
     "src/p2p",
-    "companion",
+    "companion/index.js",
+    "companion/bridge.js",
+    "companion/acp.js",
+    "companion/rpc.js",
     "src/electron/capture-worklet.js",
+    "bin/",
+    "shell/",
+    "agent.js",
+    "bridge-sw.js",
+    "cdp-client.js",
+    "cdp-client-inpage.js",
     ".env.example",
     "README.md"
   ],
@@ -30,7 +40,9 @@
     "headless": "node src/p2p/client.js",
     "companion": "node companion/index.js",
     "bridge": "node companion/bridge.js",
-    "bridge:companion": "node companion/index.js & node companion/bridge.js"
+    "bridge:companion": "node companion/index.js & node companion/bridge.js",
+    "webrig": "node bin/webrig.js",
+    "rpc": "node companion/rpc.js"
   },
   "dependencies": {
     "@discordjs/voice": "^0.19.1",
@@ -87,5 +99,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true
     }
+  },
+  "bin": {
+    "webrig": "./bin/webrig.js"
   }
 }
