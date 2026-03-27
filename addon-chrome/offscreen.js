@@ -9,6 +9,7 @@ let active = false
 
 const TYPE_AUDIO = 1
 const TYPE_FRAME = 2
+const TYPE_INPUT = 5
 
 function framed(type, payload) {
   const buf = new ArrayBuffer(8 + payload.byteLength)
@@ -28,6 +29,16 @@ function connectWs() {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
   ws = new WebSocket(wsUrl)
   ws.binaryType = 'arraybuffer'
+  ws.onmessage = (e) => {
+    if (!(e.data instanceof ArrayBuffer) || e.data.byteLength < 8) return
+    const view = new DataView(e.data)
+    const type = view.getUint32(0, true)
+    const len = view.getUint32(4, true)
+    if (type === TYPE_INPUT) {
+      const payload = new TextDecoder().decode(e.data.slice(8, 8 + len))
+      chrome.runtime.sendMessage({ type: 'INPUT_FRAME', payload })
+    }
+  }
   ws.onclose = () => {
     ws = null
     if (active) reconnectTimer = setTimeout(connectWs, 2000)
