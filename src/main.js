@@ -117,7 +117,7 @@ async function startP2P() {
 }
 
 function startWsServer() {
-  const MSG_AUDIO = 1
+  const MSG_AUDIO = 1, MSG_INPUT = 5, CDP_TO_ELECTRON = { mouseMoved: 'mouseMove', mousePressed: 'mouseDown', mouseReleased: 'mouseUp', mouseWheel: 'mouseWheel', keyDown: 'keyDown', keyUp: 'keyUp' }
   const wss = new WebSocketServer({ port: WS_AUDIO_PORT, host: '127.0.0.1' })
   wss.on('connection', (ws) => {
     let recvBuf = Buffer.alloc(0)
@@ -135,6 +135,8 @@ function startWsServer() {
           const f32 = new Float32Array(payload.buffer, payload.byteOffset, payload.byteLength / 4)
           pushAudioFrame(f32)
           if (swarmMod && SWARM_ROLE === 'host') swarmMod.sendAudio(f32)
+        } else if (type === MSG_INPUT && mw()) {
+          try { const e = JSON.parse(payload.toString()), m = CDP_TO_ELECTRON[e.type]; if (m) { const o = Object.assign({}, e, { type: m }); delete o.dispatchType; mainWindow.webContents.sendInputEvent(o) } } catch {}
         }
       }
     })
