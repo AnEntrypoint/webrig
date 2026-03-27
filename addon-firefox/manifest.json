@@ -12,7 +12,10 @@
     "<all_urls>"
   ],
   "background": {
-    "scripts": ["background.js"],
+    "scripts": [
+      "audio-pipeline.js",
+      "background.js"
+    ],
     "persistent": true
   },
   "browser_action": {

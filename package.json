@@ -9,7 +9,11 @@
     "./bot": "./src/bot/client.js",
     "./voice": "./src/bot/voice.js",
     "./swarm": "./src/p2p/swarm.js",
-    "./client": "./src/p2p/client.js"
+    "./client": "./src/p2p/client.js",
+    "./cdp-client": "./cdp-client.js",
+    "./agent": "./agent.js",
+    "./bridge": "./companion/bridge.js",
+    "./cdp-client-inpage": "./cdp-client-inpage.js"
   },
   "files": [
     "src/bot",
@@ -24,7 +28,9 @@
     "start:debug": "electron . --enable-logging",
     "build": "electron-builder --win",
     "headless": "node src/p2p/client.js",
-    "companion": "node companion/index.js"
+    "companion": "node companion/index.js",
+    "bridge": "node companion/bridge.js",
+    "bridge:companion": "node companion/index.js & node companion/bridge.js"
   },
   "dependencies": {
     "@discordjs/voice": "^0.19.1",

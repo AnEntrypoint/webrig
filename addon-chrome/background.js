@@ -136,6 +136,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ capturing, cdpAttached })
     return false
   }
+
+  if (msg.type === 'CDP_RPC' && activeTabId) {
+    chrome.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}, (result) => {
+      sendResponse(chrome.runtime.lastError ? { ok: false, error: chrome.runtime.lastError.message } : { ok: true, result: result || {} })
+    })
+    return true
+  }
   if (msg.type === 'INPUT_FRAME' && activeTabId) {
     dispatchInput(activeTabId, msg.payload)
     return false
