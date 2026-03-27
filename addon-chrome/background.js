@@ -176,7 +176,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true
   }
   if (msg.type === 'INPUT_FRAME' && activeTabId) {
-    dispatchInput(activeTabId, msg.payload)
+    dispatchInput(activeTabId, typeof msg.payload === 'string' ? new TextEncoder().encode(msg.payload) : msg.payload)
     return false
   }
 })

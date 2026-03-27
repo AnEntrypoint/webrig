@@ -16,6 +16,7 @@ const CHANNEL_ID = process.env.CHANNEL_ID
 let extensionWs = null
 let extensionCdpWs = null
 let agentBrowserSockets = new Set()
+let _cdpId = 0
 
 function sendToExtension(type, payload) {
   if (extensionWs?.readyState === WebSocket.OPEN) extensionWs.send(encode(type, payload))
@@ -23,6 +24,17 @@ function sendToExtension(type, payload) {
 
 function sendCdpToExtension(buf) {
   if (extensionCdpWs?.readyState === WebSocket.OPEN) extensionCdpWs.send(buf)
+}
+
+function dispatchInputViaCdp(payload) {
+  let evt
+  try { evt = JSON.parse(payload.toString()) } catch { return }
+  const dispatchType = evt.dispatchType || evt.type
+  const method = dispatchType === 'mouseEvent' ? 'Input.dispatchMouseEvent' : dispatchType === 'keyEvent' ? 'Input.dispatchKeyEvent' : null
+  if (!method) return
+  const params = Object.assign({}, evt)
+  delete params.dispatchType
+  sendCdpToExtension(Buffer.from(JSON.stringify({ id: ++_cdpId, method, params })))
 }
 
 function broadcastCdpDown(buf) {
@@ -40,6 +52,7 @@ function processFrame(type, payload) {
     if (SWARM_TOPIC) sendFrame(payload)
   } else if (type === MSG.INPUT) {
     if (SWARM_TOPIC) sendInput(JSON.parse(payload.toString()))
+    dispatchInputViaCdp(payload)
   } else if (type === MSG.CDP_DOWN) {
     broadcastCdpDown(payload)
   }
