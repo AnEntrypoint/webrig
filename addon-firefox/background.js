@@ -1,4 +1,3 @@
-const api = typeof browser !== 'undefined' ? browser : chrome
 function connectCdpWs() {
   if (cdpReconnectTimer) { clearTimeout(cdpReconnectTimer); cdpReconnectTimer = null }
   cdpWs = new WebSocket(cdpWsUrl)
@@ -7,9 +6,18 @@ function connectCdpWs() {
     let msg
     try { msg = JSON.parse(e.data) } catch { return }
     if (!activeTabId) return
-    api.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}).catch((err) => {
-      console.warn('[bg] CDP send error:', err)
-    })
+    if (msg.id !== undefined) {
+      api.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}).then((result) => {
+        if (cdpWs && cdpWs.readyState === WebSocket.OPEN) cdpWs.send(JSON.stringify({ id: msg.id, result: result || {} }))
+      }).catch((err) => {
+        console.warn('[bg] CDP send error:', err)
+        if (cdpWs && cdpWs.readyState === WebSocket.OPEN) cdpWs.send(JSON.stringify({ id: msg.id, error: { message: err.message || String(err) } }))
+      })
+    } else {
+      api.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}).catch((err) => {
+        console.warn('[bg] CDP send error:', err)
+      })
+    }
   }
   cdpWs.onclose = () => {
     cdpWs = null
