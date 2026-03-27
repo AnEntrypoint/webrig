@@ -1,4 +1,5 @@
 import { GoogleGenAI } from 'https://esm.sh/@google/genai@1.46.0'
+import { boot, runCli as wcRunCli, wcStatus, onWcStatus } from './wc.js'
 
 const SW_PATH = '../bridge-sw.js'
 const RPC_URL = 'ws://127.0.0.1:9377'
@@ -108,9 +109,14 @@ const companion = (() => {
 })()
 
 async function runCli(agent, prompt) {
-  if (companion.status !== 'connected') { appendLine('Companion offline — run: npx webrig (or webrig if installed)', 'err'); return }
   appendLine('you: ' + prompt, 'user')
-  appendLine('[spawning ' + agent + '…]', 'info')
+  if (wcStatus() === 'ready') {
+    appendLine('[running ' + agent + ' in WebContainer…]', 'info')
+    await wcRunCli(agent, prompt, evt => appendLine(evt.text, evt.type === 'err' ? 'err' : evt.type === 'info' ? 'info' : 'assistant'))
+    return
+  }
+  if (companion.status !== 'connected') { appendLine('WebContainer unavailable and companion offline — run: npx webrig', 'err'); return }
+  appendLine('[spawning ' + agent + ' via companion…]', 'info')
   const info = await companion.call('acp.sessions.new', { agent, cwd: stor.get('cwd') || undefined })
   companion.subscribe(info.id, evt => {
     if (evt.type === 'stderr') appendLine(evt.text, 'err')
@@ -120,7 +126,6 @@ async function runCli(agent, prompt) {
       if (d?.method === 'session/update' && d.params?.message?.content)
         d.params.message.content.filter(b => b.type === 'text').forEach(b => appendLine(b.text, 'assistant'))
       else if (d?.method === 'tools/call') appendLine('[tool: ' + (d.params?.name || '?') + ']', 'tool')
-      else appendLine(JSON.stringify(d).slice(0, 200), 'raw')
     }
   })
   try { await companion.call('acp.prompt', { sessionId: info.id, text: prompt }) } catch (e) { appendLine(e.message, 'err') }
@@ -142,6 +147,8 @@ function init() {
   registerSW()
   companion.connect()
   companion.onStatus(s => { const el = $('companion-status'); el.textContent = s; el.className = 'status-dot status-' + s })
+  onWcStatus(s => { const el = $('wc-status'); if (el) { el.textContent = s; el.className = 'status-dot status-' + (s === 'ready' ? 'connected' : s === 'booting' ? 'connecting' : 'disconnected') } })
+  boot()
   const keys = loadKeys()
   $('key-anthropic').value = keys.anthropicApiKey; $('key-openai').value = keys.openaiApiKey
   $('key-openrouter').value = keys.openrouterApiKey; $('key-gemini').value = keys.geminiApiKey

@@ -48,6 +48,9 @@ button.ghost{background:var(--bg3);color:var(--text2)}
 <header>
   <h1>webrig</h1>
   <span id="companion-status" class="status-dot status-disconnected">disconnected</span>
+  <span style="font-size:11px;color:var(--text2)">companion</span>
+  <span id="wc-status" class="status-dot status-disconnected">unavailable</span>
+  <span style="font-size:11px;color:var(--text2)">webcontainer</span>
   <div style="flex:1"></div>
   <span style="font-size:11px;color:var(--text2)">companion rpc: ws://127.0.0.1:9377</span>
 </header>
@@ -76,7 +79,7 @@ button.ghost{background:var(--bg3);color:var(--text2)}
 </div>
 <div id="settings-panel" class="tab-panel">
   <div id="settings-panel" style="padding:20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto">
-    <p class="cli-note">API agents (Gemini, Claude) run entirely in-browser — no companion needed.<br>CLI agents (kilo, opencode, claude CLI) require the companion: <code>npx webrig</code> or <code>webrig</code></p>
+    <p class="cli-note">API agents (Gemini, Claude) run entirely in-browser — no companion needed.<br>CLI agents (kilo, opencode, claude CLI) run in-browser via WebContainer (Chrome/Edge) — or via companion as fallback: <code>npx webrig</code></p>
     <div class="field"><label>Gemini API Key</label><input id="key-gemini" type="text" placeholder="AIza…"></div>
     <div class="field"><label>Anthropic API Key</label><input id="key-anthropic" type="text" placeholder="sk-ant-…"></div>
     <div class="field"><label>OpenAI API Key</label><input id="key-openai" type="text" placeholder="sk-…"></div>
