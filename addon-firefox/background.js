@@ -82,6 +82,8 @@ function startCapture(url, cdpUrl, tabId) {
   cdpActive = true
   connectCdpWs()
 
+  if (!api.tabCapture) return Promise.reject(new Error('tabCapture API not available — requires Firefox 109+'))
+
   return new Promise((resolve, reject) => {
     api.tabCapture.capture({ audio: true, video: true }, (stream) => {
       if (api.runtime.lastError) {
