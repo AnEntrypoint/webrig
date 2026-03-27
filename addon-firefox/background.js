@@ -82,25 +82,19 @@ function startCapture(url, cdpUrl, tabId) {
   cdpActive = true
   connectCdpWs()
 
-  if (!api.tabCapture) return Promise.reject(new Error('tabCapture API not available — requires Firefox 109+'))
-
-  return new Promise((resolve, reject) => {
-    api.tabCapture.capture({ audio: true, video: true }, (stream) => {
-      if (api.runtime.lastError) {
-        api.tabCapture.capture({ audio: true, video: false }, (audioStream) => {
-          if (api.runtime.lastError) {
-            reject(new Error(api.runtime.lastError.message))
-          } else {
-            startCapturePipeline(audioStream, url)
-            resolve()
-          }
-        })
-      } else {
-        startCapturePipeline(stream, url)
-        resolve()
-      }
+  const doCapture = (opts) => new Promise((resolve, reject) => {
+    api.tabCapture.capture(opts, (stream) => {
+      if (api.runtime.lastError) reject(new Error(api.runtime.lastError.message))
+      else if (!stream) reject(new Error('tabCapture returned no stream — check tabCapture permission'))
+      else resolve(stream)
     })
-  }).then(() => attachDebugger(tabId)).then(() => { capturing = true })
+  })
+
+  return doCapture({ audio: true, video: true })
+    .catch(() => doCapture({ audio: true, video: false }))
+    .then((stream) => { startCapturePipeline(stream, url) })
+    .then(() => attachDebugger(tabId))
+    .then(() => { capturing = true })
 }
 
 function stopCapture() {

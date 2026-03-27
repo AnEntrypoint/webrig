@@ -4,8 +4,10 @@
   "version": "1.0.0",
   "description": "Full host mode: tab audio/video relay, CDP passthrough, and input forwarding to Webrig via WebSocket",
   "permissions": [
+    "tabCapture",
     "storage",
     "activeTab",
+    "debugger",
     "tabs",
     "<all_urls>"
   ],
