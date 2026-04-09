@@ -6,6 +6,7 @@ let ws = null
 let wsUrl = null
 let reconnectTimer = null
 let active = false
+let nextPlayTime = 0
 
 const TYPE_AUDIO = 1
 const TYPE_FRAME = 2
@@ -34,7 +35,23 @@ function connectWs() {
     const view = new DataView(e.data)
     const type = view.getUint32(0, true)
     const len = view.getUint32(4, true)
-    if (type === TYPE_INPUT) {
+    if (type === TYPE_AUDIO) {
+      if (len % 4 !== 0 || !audioCtx) return
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {})
+      const f32 = new Float32Array(e.data, 8, len / 4)
+      const frames = f32.length / 2
+      const buf = audioCtx.createBuffer(2, frames, 48000)
+      const L = buf.getChannelData(0)
+      const R = buf.getChannelData(1)
+      for (let i = 0; i < frames; i++) { L[i] = Math.max(-1, Math.min(1, f32[i * 2])); R[i] = Math.max(-1, Math.min(1, f32[i * 2 + 1])) }
+      const src = audioCtx.createBufferSource()
+      src.buffer = buf
+      src.connect(audioCtx.destination)
+      const now = audioCtx.currentTime
+      if (nextPlayTime < now) nextPlayTime = now
+      src.start(nextPlayTime)
+      nextPlayTime += frames / 48000
+    } else if (type === TYPE_INPUT) {
       const payload = new TextDecoder().decode(e.data.slice(8, 8 + len))
       chrome.runtime.sendMessage({ type: 'INPUT_FRAME', payload })
     }
@@ -73,6 +90,7 @@ function startMediaRecorder(track) {
 
 function stopAll() {
   active = false
+  nextPlayTime = 0
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
   stopMediaRecorder()
   if (videoTrack) { try { videoTrack.stop() } catch {} videoTrack = null }
