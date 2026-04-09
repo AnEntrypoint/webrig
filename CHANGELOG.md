@@ -1,3 +1,10 @@
+## 2026-04-09 (4)
+
+### Fixed
+- **webm init segment caching**: main.js detects EBML header in first video frame, caches it, sends to late-joining WS clients and swarm peers — fixes blank video on late connections
+- **remote-view.html**: converted from JPEG \<img\> to MediaSource \<video\> with SourceBuffer for webm stream — SWARM_ROLE=client viewer now works with the new webm video path
+- **Swarm onFrame**: sends raw Buffer to renderer instead of base64 string
+
 ## 2026-04-09 (3)
 
 ### Changed

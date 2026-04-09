@@ -1,7 +1,6 @@
 import dotenv from 'dotenv'
 import path from 'node:path'
-dotenv.config({ path: path.join(path.dirname(process.execPath), '.env') })
-dotenv.config()
+dotenv.config({ path: path.join(path.dirname(process.execPath), '.env') }); dotenv.config()
 import { app, BrowserWindow, desktopCapturer, ipcMain, session } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
@@ -91,10 +90,11 @@ function _wsBroadcast(type, raw) {
   for (const ws of _wsClients) { try { ws.send(framed) } catch {} }
 }
 
-let _vfc = 0, _afc = 0
+let _vfc = 0, _afc = 0, _initSeg = null
 ipcMain.on('video-frame', (_, ab) => {
   const buf = Buffer.isBuffer(ab) ? ab : Buffer.from(ab)
-  if (++_vfc <= 3 || _vfc % 100 === 0) console.log(`[main] video #${_vfc} ${buf.length}B`)
+  _vfc++
+  if (buf.length >= 4 && buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3) { _initSeg = buf; if (_vfc <= 3) console.log(`[main] cached webm init ${buf.length}B`) }
   if (_wsClients.size > 0) _wsBroadcast(2, buf)
   if (hostMod && SWARM_ROLE === 'host') hostMod.broadcastFrame(buf)
 })
@@ -113,10 +113,10 @@ async function startP2P() {
   const isHost = SWARM_ROLE === 'host', isClient = SWARM_ROLE === 'client'
   await swarmMod.startSwarm(SWARM_TOPIC, SWARM_ROLE, {
     onAudio: (f32) => { if (isClient) pushAudioFrame(f32) },
-    onFrame: (buf) => { if (isClient && mw()) mainWindow.webContents.send('screen-frame', buf.toString('base64')) },
+    onFrame: (buf) => { if (isClient && mw()) mainWindow.webContents.send('screen-frame', buf) },
     onCdpUp: (buf, conn) => cdp.onSwarmCdpUp(buf, conn), onCdpDown: (buf) => cdp.onSwarmCdpDown(buf),
     onInput: (evt) => { if (isHost && mw()) try { mainWindow.webContents.sendInputEvent(evt) } catch {} },
-    onConnect: (conn) => { if (isHost) cdp.onPeerConnect(conn) },
+    onConnect: (conn) => { if (isHost) { cdp.onPeerConnect(conn); if (_initSeg) swarmMod.sendFrame(_initSeg) } },
     onDisconnect: (conn) => { if (isHost) cdp.onPeerDisconnect(conn) },
   })
   cdp.startCdpProxy(SWARM_ROLE, parseInt(CDP_PORT, 10), CDP_PROXY_PORT)
@@ -131,7 +131,9 @@ function startWsServer() {
   const EMAP = { mouseMoved: 'mouseMove', mousePressed: 'mouseDown', mouseReleased: 'mouseUp', mouseWheel: 'mouseWheel', keyDown: 'keyDown', keyUp: 'keyUp' }
   const wss = new WebSocketServer({ port: WS_AUDIO_PORT, host: '127.0.0.1' })
   wss.on('connection', (ws) => {
-    _wsClients.add(ws); let rb = Buffer.alloc(0)
+    _wsClients.add(ws)
+    if (_initSeg) { const h = Buffer.allocUnsafe(8); h.writeUInt32LE(2, 0); h.writeUInt32LE(_initSeg.length, 4); try { ws.send(Buffer.concat([h, _initSeg])) } catch {} }
+    let rb = Buffer.alloc(0)
     ws.on('message', (data, isBinary) => {
       if (!isBinary) return
       rb = Buffer.concat([rb, Buffer.isBuffer(data) ? data : Buffer.from(data)])
@@ -181,19 +183,17 @@ function startVdoNinja() {
   if (!/^[a-zA-Z0-9]{1,20}$/.test(VDO_ID)) { console.error('[vdo] invalid stream id:', VDO_ID); return }
   const s = session.fromPartition('persist:vdo'); s.setPermissionRequestHandler((_, __, cb) => cb(true)); s.setPermissionCheckHandler(() => true)
   const w = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'electron', 'vdo-bridge.cjs'), contextIsolation: false, webSecurity: false, allowRunningInsecureContent: true, autoplayPolicy: 'no-user-gesture-required', partition: 'persist:vdo' } })
-  w.loadURL(`https://vdo.ninja/?push=${encodeURIComponent(VDO_ID)}&room=${encodeURIComponent(VDO_ROOM)}&autostart=1&webcam&label=webrig`).catch((e) => console.error('[vdo] loadURL failed:', e.message))
-  w.webContents.on('console-message', (_, l, m) => { if (l >= 2) console.error('[vdo]', m) })
-  console.log(`[vdo] room=${VDO_ROOM} stream=${VDO_ID} | view: https://vdo.ninja/?view=${VDO_ID}&room=${VDO_ROOM}`)
+  w.loadURL(`https://vdo.ninja/?push=${encodeURIComponent(VDO_ID)}&room=${encodeURIComponent(VDO_ROOM)}&autostart=1&webcam&label=webrig`).catch(e => console.error('[vdo]', e.message))
+  console.log(`[vdo] room=${VDO_ROOM} stream=${VDO_ID}`)
 }
 
 app.on('ready', async () => {
   session.defaultSession.setPermissionRequestHandler((_, p, cb) => cb(['media', 'display-capture'].includes(p)))
-  createWindow()
-  startWsServer()
+  createWindow(); startWsServer()
   startVdoNinja()
   await startP2P()
   await startBot()
 })
 
 app.on('before-quit', () => { leaveVoice(); stopAudio(); if (swarmMod) swarmMod.destroySwarm() })
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() }); app.on('activate', () => { if (!mainWindow) createWindow() })
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

@@ -5,24 +5,36 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-#frame { width: 100%; height: 100%; object-fit: contain; display: block; }
+video { width: 100%; height: 100%; object-fit: contain; display: block; }
 #status { position: fixed; top: 8px; left: 8px; color: #666; font: 12px monospace; pointer-events: none; }
 </style>
 </head>
 <body>
-<img id="frame" src="" alt="">
+<video id="v" autoplay muted playsinline></video>
 <div id="status">Waiting for host...</div>
 <script>
-const img = document.getElementById('frame')
+const v = document.getElementById('v')
 const status = document.getElementById('status')
-let frameCount = 0
-
+let ms = null, sb = null, queue = [], fc = 0
+const CODECS = ['video/webm; codecs=av1', 'video/webm; codecs=h264', 'video/webm']
+function flush() { if (!sb || sb.updating || !queue.length) return; try { sb.appendBuffer(queue.shift()) } catch {} }
+function initMs() {
+  const codec = CODECS.find(c => MediaSource.isTypeSupported(c)) || 'video/webm'
+  ms = new MediaSource()
+  v.src = URL.createObjectURL(ms)
+  ms.addEventListener('sourceopen', () => {
+    try { sb = ms.addSourceBuffer(codec) } catch { return }
+    sb.mode = 'sequence'; sb.addEventListener('updateend', flush); flush()
+  })
+}
 if (typeof require !== 'undefined') {
   const { ipcRenderer } = require('electron')
-  ipcRenderer.on('screen-frame', (_, jpegBase64) => {
-    img.src = 'data:image/jpeg;base64,' + jpegBase64
-    frameCount++
-    if (frameCount % 30 === 0) status.textContent = 'frames: ' + frameCount
+  ipcRenderer.on('screen-frame', (_, data) => {
+    if (!ms) initMs()
+    const buf = Buffer.isBuffer(data) ? new Uint8Array(data) : new Uint8Array(data.buffer || data)
+    if (queue.length > 60) queue.splice(0, queue.length - 30)
+    queue.push(buf); flush()
+    if (++fc % 30 === 0) status.textContent = 'frames: ' + fc
   })
 }
 </script>
