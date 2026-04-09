@@ -109,12 +109,11 @@ async function startP2P() {
 }
 
 function _broadcastInbound(f32) {
-  if (_wsClients.size === 0 && !mw()) return
+  if (_wsClients.size === 0) return
   const raw = Buffer.from(f32.buffer, f32.byteOffset, f32.byteLength)
   const hdr = Buffer.allocUnsafe(8); hdr.writeUInt32LE(1, 0); hdr.writeUInt32LE(raw.length, 4)
   const framed = Buffer.concat([hdr, raw])
   for (const ws of _wsClients) { try { ws.send(framed) } catch {} }
-  if (mw()) mainWindow.webContents.send('audio-inbound', raw)
 }
 
 function startWsServer() {

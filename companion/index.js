@@ -6,7 +6,7 @@ import { initVoicePlayer, pushAudioFrame } from '../src/bot/voice.js'
 import { MSG, encode, startSwarm, sendFrame, sendInput, sendAudio } from '../src/p2p/swarm.js'
 
 const WS_AUDIO_PORT = parseInt(process.env.WS_AUDIO_PORT ?? '9888')
-const CDP_PROXY_PORT = parseInt(process.env.CDP_PROXY_PORT ?? '9231')
+const CDP_PROXY_PORT = parseInt(process.env.CDP_EXT_PORT ?? process.env.CDP_PROXY_PORT ?? '9231')
 const CDP_BRIDGE_HTTP_PORT = parseInt(process.env.CDP_BRIDGE_HTTP_PORT ?? '9222')
 const SWARM_TOPIC = process.env.SWARM_TOPIC
 const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN
@@ -51,7 +51,7 @@ function processFrame(type, payload) {
   } else if (type === MSG.FRAME) {
     if (SWARM_TOPIC) sendFrame(payload)
   } else if (type === MSG.INPUT) {
-    if (SWARM_TOPIC) sendInput(JSON.parse(payload.toString()))
+    try { if (SWARM_TOPIC) sendInput(JSON.parse(payload.toString())) } catch {}
     dispatchInputViaCdp(payload)
   } else if (type === MSG.CDP_DOWN) {
     broadcastCdpDown(payload)
