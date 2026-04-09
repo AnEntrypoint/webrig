@@ -1,3 +1,12 @@
+## 2026-04-09 (3)
+
+### Changed
+- **Video capture**: replaced JPEG screenshot polling in host.js with MediaRecorder webm capture in preload.cjs via getDisplayMedia + setDisplayMediaRequestHandler
+- **host.js**: stripped to thin relay (broadcastFrame → sendFrame to swarm); no more desktopCapturer polling
+- **main.js**: added desktopCapturer import, setDisplayMediaRequestHandler, video-frame IPC handler, WS broadcast of TYPE_FRAME=2 webm chunks
+- **preload.cjs**: new startVideoCapture — getDisplayMedia → MediaRecorder (AV1/H264, 100ms, 2Mbps) → IPC video-frame
+- vdo-bridge.cjs now receives proper webm chunks from Electron host (was previously only working with extension path)
+
 ## 2026-04-09 (2)
 
 ### Fixed

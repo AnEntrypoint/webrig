@@ -102,8 +102,8 @@ The preload patches `window.AudioContext` to intercept all page-created contexts
 ### WS audio server also runs in Electron host
 `main.js` starts a WebSocketServer on `WS_AUDIO_PORT` (default 9888) that accepts framed binary messages using the same 4+4+N protocol as the extension and companion (type LE uint32, length LE uint32, payload). AUDIO frames (type=1) are decoded as Float32 and pushed to the voice pipeline. This allows the extension to connect directly to the Electron host without the companion.
 
-### host.js sends JPEG screenshots (legacy P2P path)
-`src/p2p/host.js` calls `desktopCapturer.getSources` every 100ms, matches by `name === 'Discord Voice Bridge'`, and sends `thumbnail.toJPEG(60)` as TYPE_FRAME=2 over Hyperswarm. This is JPEG data, not webm. Only `remote-view.html` (legacy Electron SWARM_ROLE=client viewer) can render these frames. `vdo-bridge.cjs` and the extensions use webm via MediaRecorder — they cannot render host.js JPEG frames. For current video relay, use the extension + companion path or VDO.Ninja.
+### Video capture via MediaRecorder in preload
+`preload.cjs` calls `navigator.mediaDevices.getDisplayMedia()` after page load. `main.js` sets `session.setDisplayMediaRequestHandler` on the main session to auto-approve and return the main window via `desktopCapturer.getSources`. The resulting `MediaStream` feeds a `MediaRecorder` (AV1 → H264 → webm fallback, 100ms timeslice, 2Mbps). `ondataavailable` sends webm chunks via `ipcRenderer.send('video-frame')` to main, which broadcasts framed TYPE_FRAME=2 to all WS clients (for `vdo-bridge.cjs`) and to Hyperswarm peers via `host.js` → `sendFrame`. This replaces the old JPEG screenshot polling approach.
 
 ### audio-pcm IPC is also forwarded to swarm peers
 When `SWARM_ROLE=host`, each `audio-pcm` frame received from the renderer is forwarded to all connected swarm peers via `swarmMod.sendAudio(f32)` in addition to being pushed to the local AudioPlayer.
