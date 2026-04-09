@@ -24,10 +24,8 @@ Single Electron process that:
 9. `pushAudioFrame` converts f32 to s16le, writes to PassThrough stream
 10. PassThrough → prism opus Encoder → createAudioResource(StreamType.Opus) → AudioPlayer.play()
 
-### Inbound (Discord → Electron)
-In Electron host mode, `main.js` subscribes to Discord inbound speakers via `voiceReceiver.speaking` + `subscribeToSpeaker`. Decoded Float32 PCM is:
-1. Sent to renderer via `mainWindow.webContents.send('audio-inbound', buf)` — `preload.cjs` plays it via `AudioContext.createBufferSource` (bypasses `setAudioMuted`)
-2. Broadcast to all WS clients on port `WS_AUDIO_PORT` as framed AUDIO (type=1) — enables VDO.Ninja relay of inbound Discord audio
+### Inbound (Discord → WS clients in Electron mode)
+In Electron host mode, `main.js` subscribes to Discord inbound speakers via `voiceReceiver.speaking` + `subscribeToSpeaker`. Decoded Float32 PCM is broadcast to all WS clients on port `WS_AUDIO_PORT` as framed AUDIO (type=1). This enables VDO.Ninja relay (`vdo-bridge.cjs`) and any connected extension to receive inbound Discord audio. Note: inbound audio does NOT play through the Electron window speakers because `setAudioMuted(true)` mutes all AudioContext destinations in the renderer. The mute is required to prevent outbound page audio from playing locally.
 
 ### Inbound (Discord → Extension/Browser)
 In companion mode, `companion/index.js` bridges inbound Discord audio:
@@ -104,8 +102,8 @@ The preload patches `window.AudioContext` to intercept all page-created contexts
 ### WS audio server also runs in Electron host
 `main.js` starts a WebSocketServer on `WS_AUDIO_PORT` (default 9888) that accepts framed binary messages using the same 4+4+N protocol as the extension and companion (type LE uint32, length LE uint32, payload). AUDIO frames (type=1) are decoded as Float32 and pushed to the voice pipeline. This allows the extension to connect directly to the Electron host without the companion.
 
-### host.js uses WINDOW_TITLE to find the window for screen capture
-`src/p2p/host.js` calls `desktopCapturer.getSources` every 100ms and matches by `name === 'Discord Voice Bridge'` (the hardcoded `WINDOW_TITLE` constant shared with `main.js`). If the window title changes or no window matches, it falls back to `sources[0]`.
+### host.js sends JPEG screenshots (legacy P2P path)
+`src/p2p/host.js` calls `desktopCapturer.getSources` every 100ms, matches by `name === 'Discord Voice Bridge'`, and sends `thumbnail.toJPEG(60)` as TYPE_FRAME=2 over Hyperswarm. This is JPEG data, not webm. Only `remote-view.html` (legacy Electron SWARM_ROLE=client viewer) can render these frames. `vdo-bridge.cjs` and the extensions use webm via MediaRecorder — they cannot render host.js JPEG frames. For current video relay, use the extension + companion path or VDO.Ninja.
 
 ### audio-pcm IPC is also forwarded to swarm peers
 When `SWARM_ROLE=host`, each `audio-pcm` frame received from the renderer is forwarded to all connected swarm peers via `swarmMod.sendAudio(f32)` in addition to being pushed to the local AudioPlayer.
@@ -214,7 +212,7 @@ Note: `remote-view.html` expects JPEG frames (base64 `data:image/jpeg`). The P2P
 
 ### Headless CDP client (`src/p2p/client.js`)
 
-A standalone Node.js script (no Electron) that joins the swarm as a peer and exposes a local CDP WebSocket proxy.
+A standalone Node.js script (no Electron) that joins the swarm as a peer and exposes a local CDP WebSocket proxy. The client only handles CDP_DOWN messages from the host — AUDIO and FRAME messages are silently dropped. For audio/video relay, use the extension + companion path or VDO.Ninja.
 
 ```
 SWARM_TOPIC=myapp CDP_PROXY_PORT=9230 node src/p2p/client.js
@@ -260,7 +258,7 @@ On the host side, each swarm peer gets its own WebSocket connection to the Elect
 ### Env vars
 
 - `WS_AUDIO_PORT` — main data channel WS port (default 9888)
-- `CDP_PROXY_PORT` — extension CDP WS bridge port (default 9231)
+- `CDP_EXT_PORT` — extension CDP WS bridge port (default 9231, falls back to `CDP_PROXY_PORT`). Use `CDP_EXT_PORT` to avoid collision with `CDP_PROXY_PORT` used by `src/p2p/cdp-proxy.js` (default 9230)
 - `CDP_BRIDGE_HTTP_PORT` — agent-browser CDP HTTP+WS port (default 9232)
 - `SWARM_TOPIC` — Hyperswarm topic string (optional)
 - `DISCORD_BOT_TOKEN`, `GUILD_ID`, `CHANNEL_ID` — Discord voice bridge (optional)

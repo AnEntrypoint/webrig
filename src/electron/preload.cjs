@@ -445,20 +445,3 @@ async function startCapture() {
   ipcRenderer.send('log', '[capture] active (web-audio + media-element intercept)')
 }
 
-let _inboundCtx = null, _inboundNext = 0
-ipcRenderer.on('audio-inbound', (_, arrayBuffer) => {
-  const buf = Buffer.isBuffer(arrayBuffer) ? arrayBuffer : Buffer.from(arrayBuffer)
-  const f32 = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4)
-  if (f32.length === 0 || f32.length % 2 !== 0) return
-  if (!_inboundCtx) _inboundCtx = new _OrigAudioContext({ sampleRate: 48000 })
-  if (_inboundCtx.state === 'suspended') _inboundCtx.resume().catch(() => {})
-  const frames = f32.length / 2
-  const ab = _inboundCtx.createBuffer(2, frames, 48000)
-  const L = ab.getChannelData(0), R = ab.getChannelData(1)
-  for (let i = 0; i < frames; i++) { L[i] = f32[i * 2]; R[i] = f32[i * 2 + 1] }
-  const src = _inboundCtx.createBufferSource()
-  src.buffer = ab; src.connect(_inboundCtx.destination)
-  const now = _inboundCtx.currentTime
-  if (_inboundNext < now) _inboundNext = now
-  src.start(_inboundNext); _inboundNext += frames / 48000
-})
