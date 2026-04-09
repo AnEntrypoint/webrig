@@ -2,7 +2,7 @@ import dotenv from 'dotenv'
 import path from 'node:path'
 dotenv.config({ path: path.join(path.dirname(process.execPath), '.env') })
 dotenv.config()
-import { app, BrowserWindow, ipcMain, session } from 'electron'
+import { app, BrowserWindow, desktopCapturer, ipcMain, session } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from './bot/client.js'
@@ -28,6 +28,11 @@ function createWindow() {
   session.defaultSession.setUserAgent(CHROME_UA)
   const mainSession = session.fromPartition('persist:main')
   mainSession.setPermissionRequestHandler((_, __, cb) => cb(true)); mainSession.setPermissionCheckHandler(() => true)
+  mainSession.setDisplayMediaRequestHandler((_req, cb) => {
+    desktopCapturer.getSources({ types: ['window'] }).then(sources => {
+      cb({ video: sources.find(s => s.name === WINDOW_TITLE) || sources[0] })
+    }).catch(() => cb({}))
+  })
   mainSession.webRequest.onHeadersReceived((details, cb) => {
     const h = details.responseHeaders
     if (!h) { cb({}); return }
@@ -70,10 +75,9 @@ function createWindow() {
     if (!mainWindow || mainWindow.isDestroyed()) return
     mainWindow.webContents.insertCSS('html { margin-top: 36px !important; } body { margin-top: 0 !important; }')
     mainWindow.webContents.send('start-capture')
-    if (SWARM_TOPIC && SWARM_ROLE === 'host' && hostMod) hostMod.startScreenCapture()
   })
   mainWindow.webContents.on('console-message', (_, level, msg) => { if (level >= 2) console.error('[renderer]', msg) })
-  mainWindow.on('closed', () => { mainWindow = null; if (hostMod) hostMod.stopScreenCapture() })
+  mainWindow.on('closed', () => { mainWindow = null })
 }
 
 const mw = () => mainWindow && !mainWindow.isDestroyed()
@@ -81,12 +85,23 @@ for (const [ch, fn] of [['log', (_, m) => console.log('[renderer]', m)], ['nav-b
   ['nav-forward', () => { if (mw()) mainWindow.webContents.goForward() }],
   ['nav-go', (_, u) => { if (mw()) mainWindow.webContents.loadURL(u).catch(e => console.error('[nav]', e.message)) }]]) ipcMain.on(ch, fn)
 
-let _audioFrameCount = 0
-ipcMain.on('audio-pcm', (_, arrayBuffer) => {
-  const buf = Buffer.isBuffer(arrayBuffer) ? arrayBuffer : Buffer.from(arrayBuffer)
+function _wsBroadcast(type, raw) {
+  const hdr = Buffer.allocUnsafe(8); hdr.writeUInt32LE(type, 0); hdr.writeUInt32LE(raw.length, 4)
+  const framed = Buffer.concat([hdr, raw])
+  for (const ws of _wsClients) { try { ws.send(framed) } catch {} }
+}
+
+let _vfc = 0, _afc = 0
+ipcMain.on('video-frame', (_, ab) => {
+  const buf = Buffer.isBuffer(ab) ? ab : Buffer.from(ab)
+  if (++_vfc <= 3 || _vfc % 100 === 0) console.log(`[main] video #${_vfc} ${buf.length}B`)
+  if (_wsClients.size > 0) _wsBroadcast(2, buf)
+  if (hostMod && SWARM_ROLE === 'host') hostMod.broadcastFrame(buf)
+})
+ipcMain.on('audio-pcm', (_, ab) => {
+  const buf = Buffer.isBuffer(ab) ? ab : Buffer.from(ab)
   const f32 = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4)
-  if (++_audioFrameCount <= 5 || _audioFrameCount % 500 === 0)
-    console.log(`[main] audio-pcm #${_audioFrameCount} samples=${f32.length}`)
+  if (++_afc <= 5 || _afc % 500 === 0) console.log(`[main] audio #${_afc} ${f32.length}s`)
   pushAudioFrame(f32)
   if (swarmMod && SWARM_ROLE === 'host') swarmMod.sendAudio(f32)
 })
@@ -95,58 +110,44 @@ async function startP2P() {
   if (!SWARM_TOPIC) return
   ;[swarmMod, hostMod] = await Promise.all([import('./p2p/swarm.js'), import('./p2p/host.js')])
   const cdp = await import('./p2p/cdp-proxy.js')
+  const isHost = SWARM_ROLE === 'host', isClient = SWARM_ROLE === 'client'
   await swarmMod.startSwarm(SWARM_TOPIC, SWARM_ROLE, {
-    onAudio: (f32) => { if (SWARM_ROLE === 'client') pushAudioFrame(f32) },
-    onFrame: (buf) => { if (SWARM_ROLE === 'client' && mw()) mainWindow.webContents.send('screen-frame', buf.toString('base64')) },
-    onCdpUp: (buf, conn) => cdp.onSwarmCdpUp(buf, conn),
-    onCdpDown: (buf) => cdp.onSwarmCdpDown(buf),
-    onInput: (evt) => { if (SWARM_ROLE === 'host' && mw()) try { mainWindow.webContents.sendInputEvent(evt) } catch {} },
-    onConnect: (conn) => { console.log('[p2p] +peer'); if (SWARM_ROLE === 'host') cdp.onPeerConnect(conn) },
-    onDisconnect: (conn) => { console.log('[p2p] -peer'); if (SWARM_ROLE === 'host') cdp.onPeerDisconnect(conn) },
+    onAudio: (f32) => { if (isClient) pushAudioFrame(f32) },
+    onFrame: (buf) => { if (isClient && mw()) mainWindow.webContents.send('screen-frame', buf.toString('base64')) },
+    onCdpUp: (buf, conn) => cdp.onSwarmCdpUp(buf, conn), onCdpDown: (buf) => cdp.onSwarmCdpDown(buf),
+    onInput: (evt) => { if (isHost && mw()) try { mainWindow.webContents.sendInputEvent(evt) } catch {} },
+    onConnect: (conn) => { if (isHost) cdp.onPeerConnect(conn) },
+    onDisconnect: (conn) => { if (isHost) cdp.onPeerDisconnect(conn) },
   })
   cdp.startCdpProxy(SWARM_ROLE, parseInt(CDP_PORT, 10), CDP_PROXY_PORT)
-  console.log(`[p2p] started as ${SWARM_ROLE}`)
 }
 
 function _broadcastInbound(f32) {
   if (_wsClients.size === 0) return
-  const raw = Buffer.from(f32.buffer, f32.byteOffset, f32.byteLength)
-  const hdr = Buffer.allocUnsafe(8); hdr.writeUInt32LE(1, 0); hdr.writeUInt32LE(raw.length, 4)
-  const framed = Buffer.concat([hdr, raw])
-  for (const ws of _wsClients) { try { ws.send(framed) } catch {} }
+  _wsBroadcast(1, Buffer.from(f32.buffer, f32.byteOffset, f32.byteLength))
 }
 
 function startWsServer() {
-  const MSG_AUDIO = 1, MSG_INPUT = 5, CDP_TO_ELECTRON = { mouseMoved: 'mouseMove', mousePressed: 'mouseDown', mouseReleased: 'mouseUp', mouseWheel: 'mouseWheel', keyDown: 'keyDown', keyUp: 'keyUp' }
+  const EMAP = { mouseMoved: 'mouseMove', mousePressed: 'mouseDown', mouseReleased: 'mouseUp', mouseWheel: 'mouseWheel', keyDown: 'keyDown', keyUp: 'keyUp' }
   const wss = new WebSocketServer({ port: WS_AUDIO_PORT, host: '127.0.0.1' })
   wss.on('connection', (ws) => {
-    _wsClients.add(ws)
-    let recvBuf = Buffer.alloc(0)
+    _wsClients.add(ws); let rb = Buffer.alloc(0)
     ws.on('message', (data, isBinary) => {
       if (!isBinary) return
-      const chunk = Buffer.isBuffer(data) ? data : Buffer.from(data)
-      recvBuf = Buffer.concat([recvBuf, chunk])
-      while (recvBuf.length >= 8) {
-        const type = recvBuf.readUInt32LE(0)
-        const len = recvBuf.readUInt32LE(4)
-        if (recvBuf.length < 8 + len) break
-        const payload = recvBuf.slice(8, 8 + len)
-        recvBuf = recvBuf.slice(8 + len)
-        if (type === MSG_AUDIO) {
-          const f32 = new Float32Array(payload.buffer, payload.byteOffset, payload.byteLength / 4)
-          pushAudioFrame(f32)
-          if (swarmMod && SWARM_ROLE === 'host') swarmMod.sendAudio(f32)
-        } else if (type === MSG_INPUT && mw()) {
-          try { const e = JSON.parse(payload.toString()), m = CDP_TO_ELECTRON[e.type]; if (m) { const o = Object.assign({}, e, { type: m }); delete o.dispatchType; mainWindow.webContents.sendInputEvent(o) } } catch {}
-        }
+      rb = Buffer.concat([rb, Buffer.isBuffer(data) ? data : Buffer.from(data)])
+      while (rb.length >= 8) {
+        const type = rb.readUInt32LE(0), len = rb.readUInt32LE(4)
+        if (rb.length < 8 + len) break
+        const p = rb.slice(8, 8 + len); rb = rb.slice(8 + len)
+        if (type === 1) { const f = new Float32Array(p.buffer, p.byteOffset, p.byteLength / 4); pushAudioFrame(f); if (swarmMod && SWARM_ROLE === 'host') swarmMod.sendAudio(f) }
+        else if (type === 5 && mw()) { try { const e = JSON.parse(p.toString()), m = EMAP[e.type]; if (m) { const o = Object.assign({}, e, { type: m }); delete o.dispatchType; mainWindow.webContents.sendInputEvent(o) } } catch {} }
       }
     })
-    ws.on('close', () => _wsClients.delete(ws))
-    ws.on('error', () => {})
+    ws.on('close', () => _wsClients.delete(ws)); ws.on('error', () => {})
   })
   _onInboundAudio = _broadcastInbound
-  wss.on('error', (err) => console.error('[ws-audio] error:', err.message))
-  console.log(`[ws-audio] listening on ws://127.0.0.1:${WS_AUDIO_PORT}`)
+  wss.on('error', (err) => console.error('[ws] error:', err.message))
+  console.log(`[ws] listening on ws://127.0.0.1:${WS_AUDIO_PORT}`)
 }
 
 async function startBot() {
@@ -194,5 +195,5 @@ app.on('ready', async () => {
   await startBot()
 })
 
-app.on('before-quit', () => { leaveVoice(); stopAudio(); if (hostMod) hostMod.stopScreenCapture(); if (swarmMod) swarmMod.destroySwarm() })
+app.on('before-quit', () => { leaveVoice(); stopAudio(); if (swarmMod) swarmMod.destroySwarm() })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() }); app.on('activate', () => { if (!mainWindow) createWindow() })

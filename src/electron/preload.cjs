@@ -410,11 +410,31 @@ function observeMediaElements() {
   obs.observe(document.documentElement, { childList: true, subtree: true })
 }
 
+let _mediaRecorder = null
+function startVideoCapture(gen) {
+  if (_mediaRecorder) { try { _mediaRecorder.stop() } catch {} _mediaRecorder = null }
+  navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }).then(stream => {
+    if (captureGen !== gen) { stream.getTracks().forEach(t => t.stop()); return }
+    const codecs = ['video/webm; codecs=av1', 'video/webm; codecs=h264', 'video/webm']
+    const mimeType = codecs.find(c => MediaRecorder.isTypeSupported(c)) || ''
+    ipcRenderer.send('log', '[video] codec=' + (mimeType || 'default'))
+    _mediaRecorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 2_000_000 })
+    _mediaRecorder.ondataavailable = async (e) => {
+      if (captureGen !== gen || !e.data || e.data.size === 0) return
+      ipcRenderer.send('video-frame', await e.data.arrayBuffer())
+    }
+    stream.getVideoTracks()[0].onended = () => { _mediaRecorder = null }
+    _mediaRecorder.start(100)
+    ipcRenderer.send('log', '[video] recording started, timeslice=100ms')
+  }).catch(e => ipcRenderer.send('log', '[video] getDisplayMedia failed: ' + e.message))
+}
+
 async function startCapture() {
   captureGen++
   const gen = captureGen
 
   if (captureCtx) { captureCtx.close().catch(() => {}); captureCtx = null; workletNode = null }
+  if (_mediaRecorder) { try { _mediaRecorder.stop() } catch {} _mediaRecorder = null }
 
   try {
     await buildCaptureGraph()
@@ -424,6 +444,7 @@ async function startCapture() {
   }
   if (captureGen !== gen) return
   patchAudioNodeConnect()
+  startVideoCapture(gen)
   for (const ctx of _pageContexts) {
     if (ctx.state === 'suspended') ctx.resume().catch(() => {})
   }
