@@ -24,13 +24,18 @@ Single Electron process that:
 9. `pushAudioFrame` converts f32 to s16le, writes to PassThrough stream
 10. PassThrough → prism opus Encoder → createAudioResource(StreamType.Opus) → AudioPlayer.play()
 
-### Inbound (Discord → Electron)
-Not implemented in the Electron host. Inbound Discord audio is only bridged in `companion/index.js` (companion mode):
+### Inbound (Discord → Extension/Browser)
+Not implemented in the Electron host. Inbound Discord audio is bridged in `companion/index.js` (companion mode):
 1. VoiceReceiver detects speaking via `speaking` event
 2. `subscribeToSpeaker` subscribes to user's Opus stream
 3. prism opus Decoder converts Opus → s16le PCM Buffer
 4. Decoded buffer converted to Float32Array (/ 32768)
-5. Companion sends AUDIO frame to extension over WS (port 9888)
+5. Companion sends framed AUDIO (type=1) frame to extension over WS (port 9888)
+6. Chrome: `addon-chrome/offscreen.js` WS onmessage handles TYPE_AUDIO → schedules playback via `AudioContext.createBufferSource` → plays to speakers
+7. Firefox: `addon-firefox/audio-pipeline.js` WS onmessage handles TYPE_AUDIO → same playback pattern via existing capture `audioCtx`
+
+### Virtual Microphone Limitation
+Routing inbound Discord audio as a virtual microphone input to browser tabs is not achievable cross-origin in browser extensions without a system-level virtual audio cable. The offscreen document (Chrome) and background page (Firefox) run in a different origin than the captured tab, so Web Audio `captureStream()` outputs cannot be injected into the tab's `getUserMedia`. The implemented path plays inbound audio to speakers. For mic routing, use VB-Cable (Windows) or BlackHole (macOS) to loopback speakers to a virtual mic input.
 
 ## Key Architecture Decisions
 
