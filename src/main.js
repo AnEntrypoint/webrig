@@ -5,25 +5,21 @@ dotenv.config()
 import { app, BrowserWindow, ipcMain, session } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
-import { createClient, joinDiscordVoice, leaveVoice } from './bot/client.js'
+import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from './bot/client.js'
 import { initVoicePlayer, pushAudioFrame, stopAudio } from './bot/voice.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const TARGET_URL = process.env.TARGET_URL || 'https://example.com'
-const CDP_PORT = process.env.CDP_PORT || '9229'
-const SWARM_TOPIC = process.env.SWARM_TOPIC || ''
-const SWARM_ROLE = process.env.SWARM_ROLE || 'host'
-const CDP_PROXY_PORT = parseInt(process.env.CDP_PROXY_PORT || '9230', 10)
-const WS_AUDIO_PORT = parseInt(process.env.WS_AUDIO_PORT || '9888', 10)
+const e = (k, d) => process.env[k] || d
+const TARGET_URL = e('TARGET_URL', 'https://example.com'), CDP_PORT = e('CDP_PORT', '9229')
+const SWARM_TOPIC = e('SWARM_TOPIC', ''), SWARM_ROLE = e('SWARM_ROLE', 'host')
+const CDP_PROXY_PORT = parseInt(e('CDP_PROXY_PORT', '9230'), 10)
+const WS_AUDIO_PORT = parseInt(e('WS_AUDIO_PORT', '9888'), 10)
 const WINDOW_TITLE = 'Discord Voice Bridge'
-const VDO_ROOM = process.env.VDO_NINJA_ROOM || ''
-const VDO_ID = process.env.VDO_NINJA_STREAM_ID || Math.random().toString(36).slice(2, 8)
+const VDO_ROOM = e('VDO_NINJA_ROOM', ''), VDO_ID = e('VDO_NINJA_STREAM_ID', '') || Math.random().toString(36).slice(2, 8)
 
-for (const [k, v] of [['remote-debugging-port', CDP_PORT], ['remote-debugging-address', '127.0.0.1'],
-  ['disable-blink-features', 'AutomationControlled'], ['disable-features', 'MediaRouter'],
-  ['autoplay-policy', 'no-user-gesture-required']]) app.commandLine.appendSwitch(k, v)
+for (const [k, v] of [['remote-debugging-port', CDP_PORT], ['remote-debugging-address', '127.0.0.1'], ['disable-blink-features', 'AutomationControlled'], ['disable-features', 'MediaRouter'], ['autoplay-policy', 'no-user-gesture-required']]) app.commandLine.appendSwitch(k, v)
 
-let mainWindow = null, botClient = null, swarmMod = null, hostMod = null
+let mainWindow = null, botClient = null, swarmMod = null, hostMod = null, _wsClients = new Set(), _onInboundAudio = null
 for (const e of ['unhandledRejection', 'uncaughtException']) process.on(e, (err) => console.error(`[${e}]`, err))
 const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
 const CHROME_VERSION = '134'
@@ -39,16 +35,12 @@ function createWindow() {
     cb({ responseHeaders: h })
   })
   mainSession.setUserAgent(CHROME_UA)
-  mainSession.webRequest.onBeforeSendHeaders((details, cb) => {
-    const h = details.requestHeaders
-    h['User-Agent'] = CHROME_UA
-    h['sec-ch-ua'] = `"Chromium";v="${CHROME_VERSION}", "Google Chrome";v="${CHROME_VERSION}", "Not:A-Brand";v="99"`
-    h['sec-ch-ua-mobile'] = '?0'; h['sec-ch-ua-platform'] = '"Windows"'
-    h['Accept-Language'] = 'en-US,en;q=0.9'
+  mainSession.webRequest.onBeforeSendHeaders(({ requestHeaders: h, resourceType }, cb) => {
+    Object.assign(h, { 'User-Agent': CHROME_UA, 'sec-ch-ua': `"Chromium";v="${CHROME_VERSION}", "Google Chrome";v="${CHROME_VERSION}", "Not:A-Brand";v="99"`, 'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"', 'Accept-Language': 'en-US,en;q=0.9' })
     if (!h['Accept']) h['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
     if (!h['Accept-Encoding']) h['Accept-Encoding'] = 'gzip, deflate, br, zstd'
     for (const [k, v] of [['Sec-Fetch-Site','none'],['Sec-Fetch-Mode','navigate'],['Sec-Fetch-Dest','document'],['Sec-Fetch-User','?1']]) if (!h[k]) h[k] = v
-    if (details.resourceType === 'mainFrame') { h['Upgrade-Insecure-Requests'] = '1'; h['Priority'] = 'u=0, i' }
+    if (resourceType === 'mainFrame') { h['Upgrade-Insecure-Requests'] = '1'; h['Priority'] = 'u=0, i' }
     delete h['X-Powered-By']; cb({ requestHeaders: h })
   })
 
@@ -116,10 +108,20 @@ async function startP2P() {
   console.log(`[p2p] started as ${SWARM_ROLE}`)
 }
 
+function _broadcastInbound(f32) {
+  if (_wsClients.size === 0 && !mw()) return
+  const raw = Buffer.from(f32.buffer, f32.byteOffset, f32.byteLength)
+  const hdr = Buffer.allocUnsafe(8); hdr.writeUInt32LE(1, 0); hdr.writeUInt32LE(raw.length, 4)
+  const framed = Buffer.concat([hdr, raw])
+  for (const ws of _wsClients) { try { ws.send(framed) } catch {} }
+  if (mw()) mainWindow.webContents.send('audio-inbound', raw)
+}
+
 function startWsServer() {
   const MSG_AUDIO = 1, MSG_INPUT = 5, CDP_TO_ELECTRON = { mouseMoved: 'mouseMove', mousePressed: 'mouseDown', mouseReleased: 'mouseUp', mouseWheel: 'mouseWheel', keyDown: 'keyDown', keyUp: 'keyUp' }
   const wss = new WebSocketServer({ port: WS_AUDIO_PORT, host: '127.0.0.1' })
   wss.on('connection', (ws) => {
+    _wsClients.add(ws)
     let recvBuf = Buffer.alloc(0)
     ws.on('message', (data, isBinary) => {
       if (!isBinary) return
@@ -140,8 +142,10 @@ function startWsServer() {
         }
       }
     })
+    ws.on('close', () => _wsClients.delete(ws))
     ws.on('error', () => {})
   })
+  _onInboundAudio = _broadcastInbound
   wss.on('error', (err) => console.error('[ws-audio] error:', err.message))
   console.log(`[ws-audio] listening on ws://127.0.0.1:${WS_AUDIO_PORT}`)
 }
@@ -154,8 +158,11 @@ async function startBot() {
   const connectVoice = async () => {
     if (_connecting) return; _connecting = true
     try {
-      const { voiceConnection } = await joinDiscordVoice(botClient, gid, cid)
+      const { voiceConnection, voiceReceiver } = await joinDiscordVoice(botClient, gid, cid)
       initVoicePlayer(voiceConnection); console.log('[bot] joined voice')
+      voiceReceiver.speaking.on('start', (userId) => {
+        subscribeToSpeaker(userId, (_uid, f32) => { if (_onInboundAudio) _onInboundAudio(f32) })
+      })
       voiceConnection.once('stateChange', (o, n) => {
         if (n.status === 'destroyed') { _connecting = false; setTimeout(connectVoice, 15000) }
       })
@@ -172,20 +179,10 @@ async function startBot() {
 function startVdoNinja() {
   if (!VDO_ROOM || !/^[a-zA-Z0-9_-]{1,40}$/.test(VDO_ROOM)) { if (VDO_ROOM) console.error('[vdo] invalid room:', VDO_ROOM); return }
   if (!/^[a-zA-Z0-9]{1,20}$/.test(VDO_ID)) { console.error('[vdo] invalid stream id:', VDO_ID); return }
-  const s = session.fromPartition('persist:vdo')
-  s.setPermissionRequestHandler((_, __, cb) => cb(true)); s.setPermissionCheckHandler(() => true)
-  const w = new BrowserWindow({ show: false, webPreferences: {
-    preload: path.join(__dirname, 'electron', 'vdo-bridge.cjs'),
-    contextIsolation: false, webSecurity: false, allowRunningInsecureContent: true,
-    autoplayPolicy: 'no-user-gesture-required', partition: 'persist:vdo',
-  } })
-  const url = `https://vdo.ninja/?push=${encodeURIComponent(VDO_ID)}&room=${encodeURIComponent(VDO_ROOM)}&autostart=1&webcam&label=webrig`
-  w.loadURL(url).catch((e) => console.error('[vdo] loadURL failed:', e.message))
-  const wc = w.webContents
-  for (const [ev, fn] of [['console-message', (_, l, m) => { if (l >= 2) console.error('[vdo]', m) }],
-    ['render-process-gone', (_, d) => console.error('[vdo] crash:', d.reason)],
-    ['unresponsive', () => console.warn('[vdo] unresponsive')],
-    ['did-fail-load', (_, c, d) => console.error('[vdo] load failed:', c, d)]]) wc.on(ev, fn)
+  const s = session.fromPartition('persist:vdo'); s.setPermissionRequestHandler((_, __, cb) => cb(true)); s.setPermissionCheckHandler(() => true)
+  const w = new BrowserWindow({ show: false, webPreferences: { preload: path.join(__dirname, 'electron', 'vdo-bridge.cjs'), contextIsolation: false, webSecurity: false, allowRunningInsecureContent: true, autoplayPolicy: 'no-user-gesture-required', partition: 'persist:vdo' } })
+  w.loadURL(`https://vdo.ninja/?push=${encodeURIComponent(VDO_ID)}&room=${encodeURIComponent(VDO_ROOM)}&autostart=1&webcam&label=webrig`).catch((e) => console.error('[vdo] loadURL failed:', e.message))
+  w.webContents.on('console-message', (_, l, m) => { if (l >= 2) console.error('[vdo]', m) })
   console.log(`[vdo] room=${VDO_ROOM} stream=${VDO_ID} | view: https://vdo.ninja/?view=${VDO_ID}&room=${VDO_ROOM}`)
 }
 

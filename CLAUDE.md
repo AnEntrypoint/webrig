@@ -24,8 +24,13 @@ Single Electron process that:
 9. `pushAudioFrame` converts f32 to s16le, writes to PassThrough stream
 10. PassThrough → prism opus Encoder → createAudioResource(StreamType.Opus) → AudioPlayer.play()
 
+### Inbound (Discord → Electron)
+In Electron host mode, `main.js` subscribes to Discord inbound speakers via `voiceReceiver.speaking` + `subscribeToSpeaker`. Decoded Float32 PCM is:
+1. Sent to renderer via `mainWindow.webContents.send('audio-inbound', buf)` — `preload.cjs` plays it via `AudioContext.createBufferSource` (bypasses `setAudioMuted`)
+2. Broadcast to all WS clients on port `WS_AUDIO_PORT` as framed AUDIO (type=1) — enables VDO.Ninja relay of inbound Discord audio
+
 ### Inbound (Discord → Extension/Browser)
-Not implemented in the Electron host. Inbound Discord audio is bridged in `companion/index.js` (companion mode):
+In companion mode, `companion/index.js` bridges inbound Discord audio:
 1. VoiceReceiver detects speaking via `speaking` event
 2. `subscribeToSpeaker` subscribes to user's Opus stream
 3. prism opus Decoder converts Opus → s16le PCM Buffer

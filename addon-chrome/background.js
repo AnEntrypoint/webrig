@@ -17,9 +17,17 @@ function connectCdpWs() {
     let msg
     try { msg = JSON.parse(e.data) } catch { return }
     if (!activeTabId) return
-    chrome.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}, () => {
-      if (chrome.runtime.lastError) console.warn('[bg] CDP send error:', chrome.runtime.lastError.message)
-    })
+    if (msg.id !== undefined) {
+      chrome.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}, (result) => {
+        if (!cdpWs || cdpWs.readyState !== WebSocket.OPEN) return
+        if (chrome.runtime.lastError) cdpWs.send(JSON.stringify({ id: msg.id, error: { message: chrome.runtime.lastError.message } }))
+        else cdpWs.send(JSON.stringify({ id: msg.id, result: result || {} }))
+      })
+    } else {
+      chrome.debugger.sendCommand({ tabId: activeTabId }, msg.method, msg.params || {}, () => {
+        if (chrome.runtime.lastError) console.warn('[bg] CDP send error:', chrome.runtime.lastError.message)
+      })
+    }
   }
   cdpWs.onclose = () => {
     cdpWs = null
