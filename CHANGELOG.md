@@ -1,3 +1,10 @@
+## 2026-04-11
+
+### Added
+- **Chrome extension virtual mic**: inbound Discord audio from WS (TYPE_AUDIO) is injected into the active tab as a virtual `getUserMedia` microphone input via CDP `Runtime.evaluate`. `vmic.js` exports `injectVmic`/`pushVmicFrame`. On capture start, background.js injects `window.__vmic_push` + `getUserMedia`/`enumerateDevices` overrides into the tab via debugger. Offscreen forwards inbound AUDIO frames to background via `AUDIO_FRAME` message. Tab apps calling `getUserMedia({audio:true})` receive the virtual "Discord Virtual Mic" stream with live Discord speaker audio.
+- **addon-chrome/vmic.js**: new module containing `VMIC_INJECT` script, `injectVmic`, and `pushVmicFrame` (base64-encoded Float32 frames via CDP)
+- **manifest.json**: added `"type": "module"` to background service worker to enable ES module imports
+
 ## 2026-04-09 (4)
 
 ### Fixed

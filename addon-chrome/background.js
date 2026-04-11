@@ -1,3 +1,5 @@
+import { injectVmic, pushVmicFrame } from './vmic.js'
+
 let capturing = false
 let cdpAttached = false
 let activeTabId = null
@@ -6,6 +8,7 @@ let cdpWs = null
 let cdpWsUrl = null
 let cdpReconnectTimer = null
 let cdpActive = false
+const vmicState = { injected: false, queue: [] }
 
 const TYPE_INPUT = 5
 
@@ -91,12 +94,15 @@ async function startCapture(wsUrl, cdpUrl, tabId) {
   cdpActive = true
   connectCdpWs()
   await attachDebugger(tabId)
+  injectVmic(tabId, vmicState)
   chrome.runtime.sendMessage({ type: 'OFFSCREEN_START', streamId, wsUrl })
   capturing = true
 }
 
 async function stopCapture() {
   capturing = false
+  vmicState.injected = false
+  vmicState.queue.length = 0
   stopCdpWs()
   if (cdpAttached && activeTabId) {
     await new Promise((r) => chrome.debugger.detach({ tabId: activeTabId }, r))
@@ -185,6 +191,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
   if (msg.type === 'INPUT_FRAME' && activeTabId) {
     dispatchInput(activeTabId, typeof msg.payload === 'string' ? new TextEncoder().encode(msg.payload) : msg.payload)
+    return false
+  }
+  if (msg.type === 'AUDIO_FRAME' && msg.data && activeTabId) {
+    const f32 = new Float32Array(msg.data)
+    if (!vmicState.injected) { vmicState.queue.push(f32); return false }
+    pushVmicFrame(activeTabId, f32)
     return false
   }
 })
