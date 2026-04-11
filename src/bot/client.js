@@ -47,6 +47,7 @@ async function _tryJoin(channel, guild, attempt) {
         console.log('[client] voice WS closed, code:', code, 'reason:', reason?.toString?.() || '(none)')
       })
       newState.networking.on('debug', (msg) => console.log('[net]', msg.slice(0,400)))
+      newState.networking.on('transitioned', (id) => console.log('[client] DAVE transitioned, id:', id))
     }
     const oldNet = oldState.networking?.state
     const newNet = newState.networking?.state
@@ -91,8 +92,9 @@ async function joinDiscordVoice(client, guildId, channelId) {
   }
   // Wait for Discord to confirm the leave via VoiceStateUpdate, with a timeout fallback
   await new Promise(r => {
+    const botId = client.user?.id
     const onVoiceState = (oldState, newState) => {
-      if (newState.guild?.id === guildId && newState.channelId === null) {
+      if (newState.guild?.id === guildId && newState.channelId === null && (!botId || newState.member?.user?.id === botId || newState.member?.id === botId)) {
         client.off('voiceStateUpdate', onVoiceState)
         clearTimeout(timer)
         console.log('[client] voice leave confirmed by Discord')
@@ -119,10 +121,19 @@ async function joinDiscordVoice(client, guildId, channelId) {
       return { voiceConnection, voiceReceiver }
     } catch (err) {
       console.log(`[client] attempt ${attempt} failed: ${err.message}, closeCode=${err.closeCode}`)
+      _destroyExisting(guildId)
       const delay = err.closeCode === 4017 ? 10000 : err.closeCode === 4006 ? 8000 : 4000
       console.log(`[client] waiting ${delay}ms before retry...`)
       await new Promise(r => setTimeout(r, delay))
-      _destroyExisting(guildId)
+      if (err.closeCode === 4006) {
+        console.log('[client] 4006: stale session — ensure no other instance is using this bot token in voice. Re-sending leave...')
+        try {
+          for (const shard of client.ws.shards.values()) {
+            shard.send({ op: 4, d: { guild_id: guildId, channel_id: null, self_deaf: false, self_mute: false } })
+          }
+        } catch (e) { console.log('[client] leave send error:', e.message) }
+        await new Promise(r => setTimeout(r, 2000))
+      }
     }
   }
 
