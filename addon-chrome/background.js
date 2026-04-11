@@ -9,6 +9,7 @@ let cdpWsUrl = null
 let cdpReconnectTimer = null
 let cdpActive = false
 const vmicState = { injected: false, queue: [] }
+globalThis.__bgState = () => ({ capturing, cdpAttached, activeTabId, vmicInjected: vmicState.injected, vmicQueueLen: vmicState.queue.length })
 
 const TYPE_INPUT = 5
 
