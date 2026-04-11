@@ -37,6 +37,7 @@ export const VMIC_INJECT = `(function() {
       return devices
     })
   }
+  try { navigator.mediaDevices.dispatchEvent(new Event('devicechange')) } catch(_) {}
 })()`
 
 function f32ToBase64(f32Arr) {
