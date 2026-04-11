@@ -45,7 +45,8 @@
     "rpc": "node companion/rpc.js"
   },
   "dependencies": {
-    "@discordjs/voice": "^0.19.1",
+    "@discordjs/voice": "^0.19.2",
+    "@snazzah/davey": "^0.1.11",
     "b4a": "^1.8.0",
     "discord.js": "^14.25.1",
     "dotenv": "^16.4.5",

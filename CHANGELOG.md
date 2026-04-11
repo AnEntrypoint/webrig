@@ -1,3 +1,10 @@
+## 2026-04-12
+
+### Fixed
+- **DAVE decrypt failures**: updated `@discordjs/voice` to 0.19.2 and `@snazzah/davey` to 0.1.11 (latest patch releases with DAVE fixes)
+- **Voice 4006 stale session**: added bot-user-id filter to VoiceStateUpdate leave confirmation; added explicit voice leave + 2s delay before retry on 4006; added warning message indicating conflicting bot instance as likely cause
+- **DAVE debug visibility**: added `transitioned` event listener on networking to log when DAVE key exchange completes
+
 ## 2026-04-11
 
 ### Added
