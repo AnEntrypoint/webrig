@@ -37,6 +37,10 @@ function connectWs() {
       const payload = new TextDecoder().decode(e.data.slice(8, 8 + len))
       chrome.runtime.sendMessage({ type: 'INPUT_FRAME', payload })
     }
+    if (type === TYPE_AUDIO && len > 0) {
+      const f32 = new Float32Array(e.data.slice(8, 8 + len))
+      chrome.runtime.sendMessage({ type: 'AUDIO_FRAME', data: Array.from(f32) })
+    }
   }
   ws.onclose = () => {
     ws = null
