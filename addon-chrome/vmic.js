@@ -50,8 +50,10 @@ export function injectVmic(tabId, vmicState) {
   vmicState.injected = false
   chrome.debugger.sendCommand({ tabId }, 'Runtime.evaluate', { expression: VMIC_INJECT, awaitPromise: false }, () => {
     if (chrome.runtime.lastError) { console.warn('[bg] vmic inject failed:', chrome.runtime.lastError.message); return }
+    console.log('[bg] vmic injected into tab', tabId)
     vmicState.injected = true
     const queued = vmicState.queue.splice(0)
+    if (queued.length) console.log('[bg] flushing', queued.length, 'queued frames')
     queued.forEach((f32) => pushVmicFrame(tabId, f32))
   })
 }
