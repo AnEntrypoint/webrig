@@ -24,6 +24,7 @@ function resumeAudioCtx() {
   if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {})
 }
 
+const JITTER_BUFFER_S = 0.06
 function scheduleAudio(f32) {
   if (f32.length === 0) return
   if (f32.length % 2 !== 0) { warn('audio', 'odd sample count', f32.length); return }
@@ -40,7 +41,7 @@ function scheduleAudio(f32) {
   src.buffer = buf
   src.connect(audioDest)
   const now = audioCtx.currentTime
-  if (nextPlayTime < now) nextPlayTime = now
+  if (nextPlayTime < now - JITTER_BUFFER_S) nextPlayTime = now + JITTER_BUFFER_S
   src.start(nextPlayTime)
   nextPlayTime += frames / 48000
 }

@@ -147,7 +147,7 @@ function subscribeToSpeaker(userId, onPcmChunk) {
   if (existing) return existing
 
   const stream = voiceReceiver.subscribe(userId, {
-    end: { behavior: EndBehaviorType.AfterSilence, duration: 300 },
+    end: { behavior: EndBehaviorType.Manual },
   })
 
   const decoder = new prism.opus.Decoder({ frameSize: 960, channels: 2, rate: 48000 })
