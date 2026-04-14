@@ -2,6 +2,7 @@ export const VMIC_INJECT = `(function() {
   if (window.__vmic_active) return
   window.__vmic_active = true
   const ctx = new AudioContext({ sampleRate: 48000 })
+  ctx.resume().catch(() => {})
   const dest = ctx.createMediaStreamDestination()
   let nextTime = 0
   window.__vmic_push = function(f32Arr) {
@@ -20,11 +21,15 @@ export const VMIC_INJECT = `(function() {
   const origGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
   navigator.mediaDevices.getUserMedia = function(constraints) {
     if (!constraints || !constraints.audio) return origGUM(constraints)
-    return origGUM({ video: constraints.video || false, audio: false }).then(function(s) {
+    return ctx.resume().then(function() {
+      return origGUM({ video: constraints.video || false, audio: false })
+    }).then(function(s) {
       const as = new MediaStream([...vmicStream.getAudioTracks(), ...s.getVideoTracks()])
       return as
     }).catch(function() {
-      return new MediaStream(vmicStream.getAudioTracks())
+      return ctx.resume().then(function() {
+        return new MediaStream(vmicStream.getAudioTracks())
+      })
     })
   }
   const origEnum = navigator.mediaDevices.enumerateDevices.bind(navigator.mediaDevices)
