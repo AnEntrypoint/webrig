@@ -1,0 +1,98 @@
+## 🎯 webrig v1.0.46 — General-purpose Electron browser with audio routing to Discord
+
+**Runtime:** node (npm)
+
+## 🚀 Quick Start
+
+`electron .` | `electron-builder --win`
+
+# 31f 3.4kL 213fn 6cls cx2.3
+*Legend: f=files L=lines fn=functions cls=classes cx=avg-complexity | file:line:name(NL)=location Np=params | ↑N=imports-from ↓N=imported-by (N)=occurrences (+N)=more | 🔄circular 🏝️isolated 🔥complex 📋duplicated 📁large*
+
+**Langs:** JS:95% JSON:4%
+
+## 🛠️ Tech Stack
+
+**Patterns:** $(31), sendResponse(23), def(22), ws.on(21), reject(19), resolve(18)
+**Top IDs:** type(205), msg(110), buf(103), data(89), chrome(84), JSON(77)
+
+## ⚡ Code Patterns
+
+**Async:** async(102), await(87), Promise(13)
+**Errors:** try/catch(78), throw(9)
+**Internal calls:** $(31), sendResponse(23), def(22), ws.on(21), reject(19), resolve(18), document.getElementById(18), appendLine(18)
+
+## 🔗 I/O & Integration
+
+**Env vars:** ANTHROPIC_API_KEY, BRIDGE_PORT, CDP_BRIDGE_HTTP_PORT, CDP_EXT_PORT, CDP_PROXY_PORT, CHANNEL_ID, CWD, DISCORD_BOT_TOKEN, GUILD_ID, OPENAI_API_KEY, OPENROUTER_API_KEY, RPC_PORT, SHELL_PORT, SWARM_TOPIC, WS_AUDIO_PORT
+**HTTP:** fetch(8)
+**Storage:** SQL(4), files(16), JSON(77)
+**Events:** emit(1), listen(104)
+
+## 📊 Code Organization
+
+**Large files:** electron/preload.cjs:468L, addon-chrome/background.js:203L
+**Long funcs:** electron/preload.cjs:198:injectNavBar(82L), src/main.js:26:createWindow(55L)
+**Many params:** src/main.js:26:createWindow(13p), addon-firefox/background.js:3:connectCdpWs(8p), addon-firefox/background.js:79:startCapture(8p), src/main.js:109:startP2P(8p), src/main.js:155:startBot(8p), electron/vdo-bridge.cjs:74:initMediaSource(8p)
+**Classes:** cdp-client-inpage.js:0:InPageCdpClient, electron/preload.cjs:0:NavigatorUAData, electron/preload.cjs:0:NetworkInformation, cdp-client.js:0:CdpClient, agent.js:0:AgentRunner, electron/capture-worklet.js:0:CaptureProcessor
+
+## 🔄 Architecture
+
+**L0 [pure exports]:** swarm(4↓), wc(1↓), browser(1↓), vmic(1↓), acp(1↓)
+**L3 [pure imports]:** main(3↑), shell(2↑), client(1↑), rpc(1↑), background(1↑)
+**External:** ws, jeeves, dotenv, https:, hyperswarm, electron
+
+## 🔌 API Surface
+
+**Exported fns:** cdp-proxy.js:35:onPeerConnect(1p), cdp-proxy.js:39:onPeerDisconnect(1p), cdp-proxy.js:64:onSwarmCdpUp(1p), cdp-proxy.js:69:onSwarmCdpDown(1p), cdp-proxy.js:75:startCdpProxy(1p), cdp-proxy.js:80:stopCdpProxy(1p), swarm.js:15:_encode(1p), swarm.js:71:startSwarm(3p), swarm.js:81:destroySwarm(2p), swarm.js:89:sendAudio(1p), swarm.js:94:sendFrame(1p), swarm.js:98:sendInput(1p) (+3)
+**Classes:** InPageCdpClient, NavigatorUAData, NetworkInformation, CdpClient, AgentRunner, CaptureProcessor
+**Entry files:** vmic, browser, swarm, wc, acp
+
+## 🚨 Issues
+
+- 📋 23 duplicated groups
+- 🔐 eval() in browser.js:56, cdp-client-inpage.js:34, cdp-client.js:55
+
+## 🧹 Dead Code & Tests
+
+**Orphaned:** agent.js, capture-worklet.js, bridge.js, webrig.js, manifest.json, audio-pipeline.js (+11)
+**Unused exports:** bridge.js: server
+**Tests:** 0/31 (0%)
+
+## 📦 Modules
+
+- src: 8f, 12cx, 6↑6↓
+- shell: 3f, 4cx, 2↑2↓
+- companion: 5f, 2cx, 1↑1↓
+- addon-chrome: 5f, 2cx, 1↑1↓
+- addon-firefox: 4f, 0cx, 0↑0↓
+- bin: 1f, 0cx, 0↑0↓
+
+## 📄 File Index
+
+**addon-chrome/background.js** 203L fn: connectCdpWs, stopCdpWs, ensureOffscreen, attachDebugger (+3)
+**addon-chrome/manifest.json** 22L
+**addon-chrome/offscreen.js** 137L fn: framed, sendFramed, connectWs, stopMediaRecorder (+3)
+**addon-chrome/popup.js** 69L fn: setUI, renderTabs, loadTabs
+**addon-chrome/vmic.js** 73L fn: f32ToBase64, injectVmic, pushVmicFrame
+**addon-firefox/audio-pipeline.js** 120L fn: framed, sendFramed, connectWs, stopMediaRecorder (+3)
+**addon-firefox/background.js** 139L fn: connectCdpWs, stopCdpWs, attachDebugger, dispatchInput (+2)
+**addon-firefox/manifest.json** 30L
+**addon-firefox/popup.js** 52L fn: setUI
+**agent.js** 157L fn: constructor, abort, run, runStream (+3)
+**bin/webrig.js** 73L fn: findFreePort, openUrl, startChild
+**bridge-sw.js** 120L fn: getProvider, anthropicToOpenAI, openaiToAnthropic, openaiChunkToSSE (+1)
+**cdp-client-inpage.js** 46L fn: constructor, send, on, navigate (+4)
+**cdp-client.js** 87L fn: constructor, connect, send, on (+14)
+**companion/acp.js** 127L exports: [AGENTS] fn: resolveCmd, createSession, sessionUpdate, permissionRequest (+10)
+**companion/bridge.js** 129L exports: [server] fn: getProvider, anthropicToOpenAI, openaiResponseToAnthropic, openaiChunkToAnthropicSSE (+2)
+**companion/index.js** 179L fn: sendToExtension, sendCdpToExtension, dispatchInputViaCdp, broadcastCdpDown (+2)
+**companion/package.json** 17L
+**companion/rpc.js** 78L fn: resolvePath, shellExec, handle
+**package.json** 99L
+*+11 more files*
+
+Git: branch: master
+Hot: package.json(55), CLAUDE.md(14), main.js(13), background.js(12), index.js(8), build.yml(8)
+Tooling: GitHub Actions (build.yml, pages.yml)
+Conv[JS]: 4-space, single quotes, no semicolons, named exports, relative imports, kebab-case files
