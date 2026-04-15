@@ -4,8 +4,8 @@ dotenv.config({ path: path.join(path.dirname(process.execPath), '.env') }); dote
 import { app, BrowserWindow, desktopCapturer, ipcMain, session } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
-import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from './bot/client.js'
-import { initVoicePlayer, pushAudioFrame, stopAudio } from './bot/voice.js'
+import { createClient, joinDiscordVoice, subscribeToSpeaker, leaveVoice } from 'jeeves/client'
+import { initVoicePlayer, pushAudioFrame, stopAudio } from 'jeeves/voice'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const e = (k, d) => process.env[k] || d

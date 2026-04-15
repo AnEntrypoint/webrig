@@ -1,8 +1,8 @@
 import 'dotenv/config'
 import { createServer } from 'node:http'
 import { WebSocketServer, WebSocket } from 'ws'
-import { createClient, joinDiscordVoice, subscribeToSpeaker } from '../src/bot/client.js'
-import { initVoicePlayer, pushAudioFrame } from '../src/bot/voice.js'
+import { createClient, joinDiscordVoice, subscribeToSpeaker } from 'jeeves/client'
+import { initVoicePlayer, pushAudioFrame } from 'jeeves/voice'
 import { MSG, encode, startSwarm, sendFrame, sendInput, sendAudio } from '../src/p2p/swarm.js'
 
 const WS_AUDIO_PORT = parseInt(process.env.WS_AUDIO_PORT ?? '9888')
