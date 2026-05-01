@@ -1,6 +1,6 @@
 {
   "name": "webrig",
-  "version": "1.0.49",
+  "version": "1.0.50",
   "description": "General-purpose Electron browser with audio routing to Discord",
   "main": "src/main.js",
   "type": "module",
@@ -44,7 +44,7 @@
   "dependencies": {
     "@snazzah/davey": "^0.1.11",
     "b4a": "^1.8.0",
-    "dispipe": "file:../dispipe",
+    "dispipe": "^1.0.5",
     "dotenv": "^16.4.5",
     "hyperswarm": "^4.17.0",
     "ws": "^8.19.0"
