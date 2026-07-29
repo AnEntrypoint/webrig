@@ -1,6 +1,5 @@
 node_modules/
 package-lock.json
-.env
 .code-search/
 logs.txt
 dist/
@@ -30,3 +29,4 @@ electron_start.log
 .plugkit-browser-profile-*/
 .plugkit-agent-worktree/
 *.stackdump
+config.bat
