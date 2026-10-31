@@ -13,13 +13,16 @@ const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN
 const GUILD_ID = process.env.GUILD_ID
 const CHANNEL_ID = process.env.CHANNEL_ID
 
-let extensionWs = null
+const audioClients = new Set()
 let extensionCdpWs = null
 let agentBrowserSockets = new Set()
 let _cdpId = 0
 
 function sendToExtension(type, payload) {
-  if (extensionWs?.readyState === WebSocket.OPEN) extensionWs.send(encode(type, payload))
+  const framed = encode(type, payload)
+  for (const ws of audioClients) {
+    if (ws.readyState === WebSocket.OPEN) ws.send(framed)
+  }
 }
 
 function sendCdpToExtension(buf) {
@@ -75,11 +78,11 @@ function attachFraming(ws) {
 
 const audioWss = new WebSocketServer({ port: WS_AUDIO_PORT, host: '127.0.0.1' })
 audioWss.on('connection', (ws) => {
-  extensionWs = ws
+  audioClients.add(ws)
   attachFraming(ws)
   ws.on('error', () => {})
-  ws.on('close', () => { if (extensionWs === ws) extensionWs = null })
-  console.log('[companion] extension connected on', WS_AUDIO_PORT)
+  ws.on('close', () => audioClients.delete(ws))
+  console.log('[companion] audio client connected on', WS_AUDIO_PORT, `(${audioClients.size} total)`)
 })
 console.log('[companion] audio WS listening on', WS_AUDIO_PORT)
 
