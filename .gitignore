@@ -1,3 +1,5 @@
+.prd
+.codeinsight
 node_modules/
 package-lock.json
 .code-search/
@@ -8,7 +10,6 @@ companion-pm2.json
 
 electron.log
 electron_start.log
-# >>> gm managed (do not edit between markers)
 .gm-stop-verified
 .gm/prd-state.json
 .gm/rslearn-counter.json
@@ -23,10 +24,12 @@ electron_start.log
 .gm/prd.paused.yml
 .gm/rs-learn.db-shm
 .gm/rs-learn.db-wal
-# tracked: .gm/rs-learn.db, .gm/code-search/, AGENTS.md, .gm/prd.yml
-# <<< gm managed
 .plugkit-browser-profile/
 .plugkit-browser-profile-*/
 .plugkit-agent-worktree/
 *.stackdump
 config.bat
+.gm/
+.agentplug-kv/
+.playwriter/
+.env
